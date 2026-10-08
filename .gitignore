@@ -1,0 +1,16 @@
+# Generated from project.yml with XcodeGen.
+ScanPDF.xcodeproj/
+*.xcworkspace/xcuserdata/
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+*.ipa
+*.xcarchive
+*.xcresult
+.DS_Store
+.env
+*.p12
+*.mobileprovision
+*.keychain-db
+__pycache__/

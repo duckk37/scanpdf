@@ -1,0 +1,158 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      sign_with_apple:
+        description: 'Also sign with the configured Apple certificate/profile secrets'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Test and package iOS 17+ app
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install verified XcodeGen 2.46.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/xcodegen.zip"
+          curl --fail --location --retry 3 \
+            'https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip' \
+            --output "$archive"
+          printf '%s  %s\n' \
+            '4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806' \
+            "$archive" | shasum -a 256 --check
+          unzip -q "$archive" -d "$RUNNER_TEMP/xcodegen-download"
+          mkdir -p "$RUNNER_TEMP/xcodegen-install"
+          bash "$RUNNER_TEMP/xcodegen-download/xcodegen/install.sh" "$RUNNER_TEMP/xcodegen-install"
+          echo "$RUNNER_TEMP/xcodegen-install/bin" >> "$GITHUB_PATH"
+          xcodebuild -version
+
+      - name: Test simulator, build arm64, and package IPA
+        shell: bash
+        run: bash scripts/build-ios.sh
+
+      - name: Upload IPA for SideStore
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ScanPDF-SideStore
+          path: |
+            build/ScanPDF-SideStore.ipa
+            build/ScanPDF-SideStore.ipa.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Apple signing (optional manual run)
+        if: github.event_name == 'workflow_dispatch' && inputs.sign_with_apple
+        shell: bash
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.BUILD_PROVISION_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          bash scripts/sign-ipa.sh \
+            build/DerivedData/Build/Products/Release-iphoneos/ScanPDF.app \
+            build/ScanPDF-AppleSigned.ipa
+
+      - name: Upload Apple-signed IPA
+        if: github.event_name == 'workflow_dispatch' && inputs.sign_with_apple
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ScanPDF-AppleSigned
+          path: |
+            build/ScanPDF-AppleSigned.ipa
+            build/ScanPDF-AppleSigned.ipa.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ScanPDF-Test-Results
+          path: build/Tests-*.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload simulator screenshot
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ScanPDF-Simulator-Preview
+          path: build/ScanPDF-Simulator.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+  release:
+    name: Publish downloadable SideStore IPA
+    needs: build
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: scanpdf-releases
+      cancel-in-progress: false
+    steps:
+      - name: Download tested IPA
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ScanPDF-SideStore
+          path: dist
+
+      - name: Create or update GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum --check ScanPDF-SideStore.ipa.sha256
+          notes="$RUNNER_TEMP/release-notes.md"
+          cat > "$notes" <<EOF
+          ScanPDF cho iPhone/iPad chạy iOS 17 trở lên.
+
+          Tải **ScanPDF-SideStore.ipa** và mở bằng SideStore để ký bằng Apple Account của bạn. Chữ ký ad-hoc của gói này chỉ phục vụ kiểm tra toàn vẹn; đây chưa phải IPA được ký bằng chứng chỉ Apple của bạn.
+
+          Build: **${GITHUB_SHA}**. Simulator tests đã vượt qua trước khi đóng gói. Cần kiểm tra camera/quét trên thiết bị thật.
+
+          Hướng dẫn cài đặt và giới hạn: https://github.com/$GH_REPO#cài-bằng-sidestore
+          EOF
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
+            if ! gh release view "$tag" >/dev/null 2>&1; then
+              gh release create "$tag" --verify-tag --title "ScanPDF $tag" --notes-file "$notes"
+            fi
+          else
+            tag=latest
+            if gh release view "$tag" >/dev/null 2>&1; then
+              gh api --method PATCH "repos/$GH_REPO/git/refs/tags/$tag" \
+                -f "sha=$GITHUB_SHA" -F force=true >/dev/null
+              gh release edit "$tag" --title 'ScanPDF · Latest build' --notes-file "$notes" --prerelease
+            else
+              gh release create "$tag" --target "$GITHUB_SHA" \
+                --title 'ScanPDF · Latest build' --notes-file "$notes" --prerelease
+            fi
+          fi
+          gh release upload "$tag" ScanPDF-SideStore.ipa ScanPDF-SideStore.ipa.sha256 --clobber
