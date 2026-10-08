@@ -12,7 +12,7 @@ struct PDFViewer: UIViewRepresentable {
         view.displayMode = .singlePageContinuous
         view.displayDirection = .vertical
         view.backgroundColor = UIColor.secondarySystemBackground
-        view.showsPageBreaks = true
+        view.displaysPageBreaks = true
         view.pageBreakMargins = UIEdgeInsets(top: 12, left: 8, bottom: 12, right: 8)
         context.coordinator.observe(view)
         return view
