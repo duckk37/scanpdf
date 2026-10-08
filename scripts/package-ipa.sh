@@ -30,7 +30,7 @@ fi
 codesign --force --sign - --timestamp=none "$app"
 codesign --verify --deep --strict "$app"
 test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")" = 'com.duckk37.scanpdf'
-xcrun lipo -verify_arch arm64 "$app/ScanPDF"
+xcrun lipo "$app/ScanPDF" -verify_arch arm64
 ditto -c -k --norsrc --keepParent "$staging/Payload" "$ipa_path"
 unzip -t "$ipa_path"
 (cd "$output_dir" && shasum -a 256 "$(basename "$ipa_path")" > "$(basename "$ipa_path").sha256")
