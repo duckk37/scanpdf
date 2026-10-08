@@ -58,7 +58,7 @@ open ScanPDF.xcodeproj
 bash scripts/build-ios.sh
 ```
 
-Script tự chọn một iPhone simulator đã cài có iOS 17 trở lên, chạy XCTest, cài/mở app để kiểm tra khởi chạy và chụp `build/ScanPDF-Simulator.png`, build Release cho thiết bị arm64 bằng `CODE_SIGNING_ALLOWED=NO`, rồi đóng gói `Payload/ScanPDF.app`. File đầu ra gồm `build/ScanPDF-SideStore.ipa`, checksum và kết quả test `.xcresult`. CI giữ ảnh màn hình trong artifact **ScanPDF-Simulator-Preview** để kiểm tra giao diện ban đầu.
+Script chọn một iPhone simulator đã cài có iOS 17 trở lên, ưu tiên phiên bản khớp SDK của Xcode đang hoạt động; nếu không có, chọn phiên bản gần nhất thấp hơn SDK. Script chạy XCTest, cài/mở app để kiểm tra khởi chạy và chụp `build/ScanPDF-Simulator.png`, build Release cho thiết bị arm64 bằng `CODE_SIGNING_ALLOWED=NO`, rồi đóng gói `Payload/ScanPDF.app`. File đầu ra gồm `build/ScanPDF-SideStore.ipa`, checksum và kết quả test `.xcresult`. CI giữ ảnh màn hình trong artifact **ScanPDF-Simulator-Preview** để kiểm tra giao diện ban đầu.
 
 Windows không có Xcode/iOS SDK, nên không thể biên dịch hoặc kiểm chứng iOS native tại máy Windows. Workflow [Build iOS IPA](.github/workflows/ios.yml) dùng runner macOS để thực hiện build/test. Các GitHub Actions được pin bằng commit SHA; XcodeGen tải về được xác minh SHA-256.
 
