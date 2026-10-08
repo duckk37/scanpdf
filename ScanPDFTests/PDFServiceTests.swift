@@ -48,6 +48,25 @@ final class PDFServiceTests: XCTestCase {
         XCTAssertEqual(light.red, light.blue, accuracy: 0.01)
     }
 
+    func testScanAndCompressionKeepImagePixelsAfterTemporaryDocumentIsReleased() throws {
+        let size = CGSize(width: 400, height: 600)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let source = UIGraphicsImageRenderer(size: size, format: format).image { renderer in
+            UIColor.red.setFill()
+            renderer.fill(CGRect(x: 0, y: 0, width: 400, height: 300))
+            UIColor.blue.setFill()
+            renderer.fill(CGRect(x: 0, y: 300, width: 400, height: 300))
+        }
+        let scannedURL = directory.appendingPathComponent("colored-scan.pdf")
+        try write(PDFService.makePDF(images: [source]), to: scannedURL)
+        let scanned = try PDFService.open(url: scannedURL)
+        try assertRedTopAndBlueBottom(try XCTUnwrap(scanned.page(at: 0)).thumbnail(of: size, for: .cropBox))
+        let compressed = try persisted(PDFService.compress(url: scannedURL, quality: 0.6, maxDimension: 800))
+        try assertRedTopAndBlueBottom(try XCTUnwrap(compressed.page(at: 0)).thumbnail(of: size, for: .cropBox))
+    }
+
     func testMergeAndExtractPreserveTextAndOrderAfterSaving() throws {
         let first = try fixture(["Document A / Page 1", "Document A / Page 2"])
         let second = try fixture(["Document B / Page 1"])
@@ -129,8 +148,8 @@ final class PDFServiceTests: XCTestCase {
         let page = try XCTUnwrap(result.page(at: 0))
         XCTAssertEqual(page.bounds(for: .mediaBox).width, 480, accuracy: 0.01)
         XCTAssertEqual(page.bounds(for: .mediaBox).height, 320, accuracy: 0.01)
-        XCTAssertTrue(try XCTUnwrap(page.string).contains("Original searchable content"))
-        XCTAssertTrue(try XCTUnwrap(page.string).contains("CONFIDENTIAL"))
+        XCTAssertTrue(try XCTUnwrap(page.string).contains("Original searchable content"), page.string ?? "nil page text")
+        XCTAssertTrue(try XCTUnwrap(page.string).contains("CONFIDENTIAL"), page.string ?? "nil page text")
         assertError(.emptyWatermark) { _ = try PDFService.watermark(url: source, text: "   ") }
     }
 
@@ -150,7 +169,7 @@ final class PDFServiceTests: XCTestCase {
         let result = try persisted(PDFService.signature(url: source, page: 0, image: stamp,
                                                        relativeRect: CGRect(x: 0.1, y: 0.1, width: 0.2, height: 0.1)))
         let page = try XCTUnwrap(result.page(at: 0))
-        XCTAssertTrue(try XCTUnwrap(page.string).contains("Signed document"))
+        XCTAssertTrue(try XCTUnwrap(page.string).contains("Signed document"), page.string ?? "nil page text")
         let thumbnail = page.thumbnail(of: CGSize(width: 320, height: 480), for: .cropBox)
         let upper = try pixel(in: thumbnail, normalizedPoint: CGPoint(x: 0.2, y: 0.15))
         let lower = try pixel(in: thumbnail, normalizedPoint: CGPoint(x: 0.2, y: 0.85))
@@ -247,11 +266,11 @@ final class PDFServiceTests: XCTestCase {
         }
         let document = try XCTUnwrap(PDFDocument(data: data))
         let page = try XCTUnwrap(document.page(at: 0))
-        XCTAssertTrue(try XCTUnwrap(page.string).contains("Selectable scanned text"))
-        XCTAssertFalse(try XCTUnwrap(document.findString("scanned", withOptions: [])).isEmpty)
+        XCTAssertTrue(try XCTUnwrap(page.string).contains("Selectable scanned text"), page.string ?? "nil page text")
+        XCTAssertFalse(try XCTUnwrap(document.findString("scanned", withOptions: [])).isEmpty, page.string ?? "nil page text")
         // The glyph bounds should land in the same bottom-left rectangle as Vision's observation.
         let selection = try XCTUnwrap(page.selection(for: CGRect(x: 25, y: 325, width: 280, height: 70)))
-        XCTAssertTrue(try XCTUnwrap(selection.string).contains("scanned"))
+        XCTAssertTrue(try XCTUnwrap(selection.string).contains("scanned"), selection.string ?? "nil selection text")
         let thumbnail = page.thumbnail(of: size, for: .cropBox)
         let color = try pixel(in: thumbnail, normalizedPoint: CGPoint(x: 0.5, y: 0.25))
         XCTAssertGreaterThan(color.red, 0.95)
@@ -315,6 +334,17 @@ final class PDFServiceTests: XCTestCase {
         XCTAssertThrowsError(try action(), file: file, line: line) { error in
             XCTAssertEqual(error as? PDFServiceError, expected, file: file, line: line)
         }
+    }
+
+    private func assertRedTopAndBlueBottom(_ image: UIImage, file: StaticString = #filePath, line: UInt = #line) throws {
+        let upper = try pixel(in: image, normalizedPoint: CGPoint(x: 0.5, y: 0.25))
+        let lower = try pixel(in: image, normalizedPoint: CGPoint(x: 0.5, y: 0.75))
+        XCTAssertGreaterThan(upper.red, 0.85, file: file, line: line)
+        XCTAssertLessThan(upper.green, 0.15, file: file, line: line)
+        XCTAssertLessThan(upper.blue, 0.15, file: file, line: line)
+        XCTAssertGreaterThan(lower.blue, 0.85, file: file, line: line)
+        XCTAssertLessThan(lower.red, 0.15, file: file, line: line)
+        XCTAssertLessThan(lower.green, 0.15, file: file, line: line)
     }
 
     private func pixel(in image: UIImage, normalizedPoint: CGPoint) throws -> (red: CGFloat, green: CGFloat, blue: CGFloat) {

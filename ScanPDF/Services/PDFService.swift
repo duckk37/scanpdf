@@ -81,8 +81,8 @@ enum PDFService {
         for image in images {
             try autoreleasepool {
                 let prepared = try prepare(image: image, filter: filter, maxDimension: 3_000)
-                let page = try imagePage(image: prepared, quality: 0.92)
-                try appendCopy(page, to: output)
+                let data = try imagePDFData(image: prepared, quality: 0.92)
+                try appendRenderedData(data, to: output)
             }
         }
         return output
@@ -152,8 +152,8 @@ enum PDFService {
                 guard let page = source.page(at: index) else { throw PDFServiceError.invalidPDF }
                 let size = try displayedSize(of: page)
                 let image = try render(page: page, maxDimension: min(maxDimension, 6_000))
-                let compressed = try imagePage(image: image, quality: quality, pageSize: size)
-                try appendCopy(compressed, to: output)
+                let compressed = try imagePDFData(image: image, quality: quality, pageSize: size)
+                try appendRenderedData(compressed, to: output)
             }
         }
         return output
@@ -170,7 +170,7 @@ enum PDFService {
         for index in 0..<source.pageCount {
             try autoreleasepool {
                 guard let page = source.page(at: index) else { throw PDFServiceError.invalidPDF }
-                let decorated = try decoratedPage(page) { rect, context in
+                let decorated = try decoratedPDFData(page) { rect, context in
                     let font = UIFont.boldSystemFont(ofSize: min(72, rect.width * 0.10))
                     let attributes: [NSAttributedString.Key: Any] = [
                         .font: font, .foregroundColor: UIColor.gray.withAlphaComponent(0.27)
@@ -186,7 +186,7 @@ enum PDFService {
                     string.draw(at: CGPoint(x: -measured.width / 2, y: -measured.height / 2), withAttributes: attributes)
                     context.restoreGState()
                 }
-                try appendCopy(decorated, to: output)
+                try appendRenderedData(decorated, to: output)
             }
         }
         return output
@@ -240,7 +240,7 @@ enum PDFService {
         for pageIndex in 0..<source.pageCount {
             guard let page = source.page(at: pageIndex) else { throw PDFServiceError.invalidPDF }
             if pageIndex == index {
-                let decorated = try decoratedPage(page) { rect, _ in
+                let decorated = try decoratedPDFData(page) { rect, _ in
                     let target = CGRect(
                         x: relativeRect.minX * rect.width,
                         y: relativeRect.minY * rect.height,
@@ -249,7 +249,7 @@ enum PDFService {
                     )
                     image.draw(in: aspectFit(image.size, in: target))
                 }
-                try appendCopy(decorated, to: output)
+                try appendRenderedData(decorated, to: output)
             } else {
                 try appendCopy(page, to: output)
             }
@@ -295,10 +295,7 @@ enum PDFService {
                         prepared.draw(in: CGRect(origin: .zero, size: size))
                         drawSearchableText(recognized, pageSize: size, in: context.cgContext)
                     }
-                    guard let document = PDFDocument(data: data), let page = document.page(at: 0) else {
-                        throw PDFServiceError.renderingFailed
-                    }
-                    try appendCopy(page, to: output)
+                    try appendRenderedData(data, to: output)
                 }
             }
             return output
@@ -337,6 +334,14 @@ enum PDFService {
         document.insert(copy, at: document.pageCount)
     }
 
+    private static func appendRenderedData(_ data: Data, to document: PDFDocument) throws {
+        guard let source = PDFDocument(data: data), let page = source.page(at: 0) else {
+            throw PDFServiceError.renderingFailed
+        }
+        // PDFPage borrows its source document's resources. Copy before its owner is released.
+        try withExtendedLifetime(source) { try appendCopy(page, to: document) }
+    }
+
     private static func copyPages(_ source: PDFDocument, indices: [Int]? = nil) throws -> PDFDocument {
         let output = PDFDocument()
         output.documentAttributes = source.documentAttributes
@@ -347,20 +352,16 @@ enum PDFService {
         return output
     }
 
-    private static func imagePage(image: UIImage, quality: CGFloat, pageSize: CGSize? = nil) throws -> PDFPage {
+    private static func imagePDFData(image: UIImage, quality: CGFloat, pageSize: CGSize? = nil) throws -> Data {
         guard let jpeg = image.jpegData(compressionQuality: quality), let encoded = UIImage(data: jpeg) else {
             throw PDFServiceError.invalidImage
         }
         let size = pageSize ?? scanPageSize(for: encoded.size)
         let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: size))
-        let data = renderer.pdfData { context in
+        return renderer.pdfData { context in
             context.beginPage()
             encoded.draw(in: CGRect(origin: .zero, size: size))
         }
-        guard let pdf = PDFDocument(data: data), let page = pdf.page(at: 0) else {
-            throw PDFServiceError.renderingFailed
-        }
-        return page
     }
 
     private static func scanPageSize(for size: CGSize) -> CGSize {
@@ -447,19 +448,15 @@ enum PDFService {
         }
     }
 
-    private static func decoratedPage(_ page: PDFPage, overlay: (CGRect, CGContext) -> Void) throws -> PDFPage {
+    private static func decoratedPDFData(_ page: PDFPage, overlay: (CGRect, CGContext) -> Void) throws -> Data {
         let size = try displayedSize(of: page)
         let bounds = CGRect(origin: .zero, size: size)
         let renderer = UIGraphicsPDFRenderer(bounds: bounds)
-        let data = renderer.pdfData { renderer in
+        return renderer.pdfData { renderer in
             renderer.beginPage()
             draw(page: page, in: bounds, context: renderer.cgContext)
             overlay(bounds, renderer.cgContext)
         }
-        guard let document = PDFDocument(data: data), let result = document.page(at: 0) else {
-            throw PDFServiceError.renderingFailed
-        }
-        return result
     }
 
     private static func aspectFit(_ size: CGSize, in rect: CGRect) -> CGRect {
@@ -609,7 +606,10 @@ enum PDFService {
                               width: line.bounds.width * pageSize.width, height: line.bounds.height * pageSize.height)
             guard rect.width > 0, rect.height > 0, !line.text.isEmpty else { continue }
             let font = CTFontCreateWithName("Helvetica" as CFString, rect.height, nil)
-            let attributes: [NSAttributedString.Key: Any] = [NSAttributedString.Key(kCTFontAttributeName as String): font]
+            let attributes: [NSAttributedString.Key: Any] = [
+                NSAttributedString.Key(kCTFontAttributeName as String): font,
+                NSAttributedString.Key(kCTForegroundColorFromContextAttributeName as String): true
+            ]
             let ctLine = CTLineCreateWithAttributedString(NSAttributedString(string: line.text, attributes: attributes))
             var ascent: CGFloat = 0
             var descent: CGFloat = 0
@@ -617,9 +617,15 @@ enum PDFService {
             guard width > 0, ascent + descent > 0 else { continue }
             let scaleX = rect.width / width
             let scaleY = rect.height / (ascent + descent)
-            context.textMatrix = CGAffineTransform(scaleX: scaleX, y: scaleY)
-            context.textPosition = CGPoint(x: rect.minX, y: rect.minY + descent * scaleY)
+            context.saveGState()
+            context.translateBy(x: rect.minX, y: rect.minY)
+            context.scaleBy(x: scaleX, y: scaleY)
+            // Scale the full coordinate system, including glyph advances, not just glyph outlines.
+            context.textMatrix = .identity
+            context.textPosition = CGPoint(x: 0, y: descent)
+            context.setTextDrawingMode(.invisible)
             CTLineDraw(ctLine, context)
+            context.restoreGState()
         }
         context.restoreGState()
     }

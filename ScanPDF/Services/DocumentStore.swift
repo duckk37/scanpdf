@@ -51,6 +51,7 @@ final class DocumentStore: ObservableObject {
 
     @discardableResult
     func save(document: PDFDocument, name: String) throws -> LibraryDocument {
+        guard document.pageCount > 0 || document.isLocked else { throw LibraryError.invalidPDF }
         guard let data = document.dataRepresentation() else { throw LibraryError.writeFailed }
         return try save(data: data, name: name)
     }
@@ -85,6 +86,7 @@ final class DocumentStore: ObservableObject {
     }
 
     func replace(_ item: LibraryDocument, with document: PDFDocument) throws {
+        guard document.pageCount > 0 || document.isLocked else { throw LibraryError.invalidPDF }
         guard let data = document.dataRepresentation() else { throw LibraryError.writeFailed }
         try replace(item, with: data)
     }
