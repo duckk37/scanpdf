@@ -25,6 +25,7 @@ struct DocumentDetailView: View {
     @State private var hasLaunchedInitialTool = false
     @State private var ocrText = ""
     @State private var confirmRemovePassword = false
+    @State private var pendingSheetAction: (() -> Void)?
 
     private var currentItem: LibraryDocument { store.documents.first { $0.id == item.id } ?? item }
     private var sourceURL: URL { unlockedURL ?? store.url(for: currentItem) }
@@ -80,7 +81,11 @@ struct DocumentDetailView: View {
                 .accessibilityLabel("Tùy chọn tài liệu").disabled(isProcessing || isLoading)
             }
         }
-        .sheet(item: $activeSheet) { sheet in sheetContent(sheet) }
+        .sheet(item: $activeSheet, onDismiss: {
+            let action = pendingSheetAction
+            pendingSheetAction = nil
+            action?()
+        }) { sheet in sheetContent(sheet) }
         .sheet(isPresented: $showShare) { ActivitySheet(items: [store.url(for: currentItem)]) }
         .fullScreenCover(isPresented: $showFullScreen) {
             if let document { FullScreenPDFView(document: document, name: currentItem.name, currentPage: $currentPage) }
@@ -229,42 +234,52 @@ struct DocumentDetailView: View {
             }
         case .rename:
             RenamePDFSheet(currentName: currentItem.name) { name in
-                do { try store.rename(currentItem, to: name) }
-                catch { showError(error) }
+                finishSheetThen {
+                    do { try store.rename(currentItem, to: name) }
+                    catch { showError(error) }
+                }
             }
         case .pages(let action):
             if let document {
                 PageOperationSheet(document: document, action: action,
                                    suggestedName: currentItem.name + " - Trích trang", initialSelection: selectedPages,
-                                   onConfirm: applyPageOperation)
+                                   onConfirm: { request in finishSheetThen { applyPageOperation(request) } })
             }
         case .reorder:
             if let document {
                 ReorderPagesSheet(document: document) { order in
-                    runPDFOperation(title: "Đang sắp xếp…", overwrite: true) { try PDFService.reorder(url: $0, order: order) }
+                    finishSheetThen {
+                        runPDFOperation(title: "Đang sắp xếp…", overwrite: true) { try PDFService.reorder(url: $0, order: order) }
+                    }
                 }
             }
         case .compress:
             CompressPDFSheet { quality, dimension in
-                runPDFOperation(title: "Đang nén PDF…", outputName: currentItem.name + " - Nén") {
-                    try PDFService.compress(url: $0, quality: quality, maxDimension: dimension)
+                finishSheetThen {
+                    runPDFOperation(title: "Đang nén PDF…", outputName: currentItem.name + " - Nén") {
+                        try PDFService.compress(url: $0, quality: quality, maxDimension: dimension)
+                    }
                 }
             }
         case .watermark:
             WatermarkPDFSheet { text in
-                runPDFOperation(title: "Đang thêm watermark…", outputName: currentItem.name + " - Watermark") {
-                    try PDFService.watermark(url: $0, text: text)
+                finishSheetThen {
+                    runPDFOperation(title: "Đang thêm watermark…", outputName: currentItem.name + " - Watermark") {
+                        try PDFService.watermark(url: $0, text: text)
+                    }
                 }
             }
         case .protect:
             ProtectPDFSheet { password in
-                runDataOperation(title: "Đang bảo vệ PDF…", outputName: currentItem.name + " - Bảo vệ", preserveProtection: false) {
-                    try PDFService.protect(url: $0, password: password)
+                finishSheetThen {
+                    runDataOperation(title: "Đang bảo vệ PDF…", outputName: currentItem.name + " - Bảo vệ", preserveProtection: false) {
+                        try PDFService.protect(url: $0, password: password)
+                    }
                 }
             }
         case .signature:
             SignatureView(pageNumber: currentPage + 1) { image, placement in
-                addSignature(image, placement: placement)
+                finishSheetThen { addSignature(image, placement: placement) }
             }
         case .ocr:
             OCRTextSheet(text: ocrText, name: currentItem.name)
@@ -295,11 +310,12 @@ struct DocumentDetailView: View {
     private func launchInitialToolIfNeeded() {
         guard !hasLaunchedInitialTool, let initialTool else { return }
         hasLaunchedInitialTool = true
-        // Give the password sheet time to finish its dismissal before presenting another sheet.
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(350))
-            presentTool(initialTool)
-        }
+        presentTool(initialTool)
+    }
+
+    private func finishSheetThen(_ action: @escaping () -> Void) {
+        pendingSheetAction = action
+        activeSheet = nil
     }
 
     private func loadDocument() async {
@@ -338,8 +354,9 @@ struct DocumentDetailView: View {
 
     private func install(data: Data, wasLocked: Bool) throws {
         guard let pdf = PDFDocument(data: data), !pdf.isLocked, pdf.pageCount > 0 else { throw PDFServiceError.invalidPDF }
+        let replacementURL = wasLocked ? try workingFiles.write(data) : nil
         if let previous = unlockedURL { workingFiles.remove(previous) }
-        unlockedURL = wasLocked ? try workingFiles.write(data) : nil
+        unlockedURL = replacementURL
         sourceWasLocked = wasLocked
         document = pdf
         currentPage = min(currentPage, pdf.pageCount - 1)
@@ -360,9 +377,8 @@ struct DocumentDetailView: View {
                 }.value
                 try install(data: data, wasLocked: true)
                 protectionPassword = password
-                activeSheet = nil
                 isProcessing = false
-                launchInitialToolIfNeeded()
+                finishSheetThen { launchInitialToolIfNeeded() }
             } catch {
                 unlockError = error.localizedDescription
                 isProcessing = false

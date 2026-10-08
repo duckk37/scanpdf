@@ -119,7 +119,6 @@ struct PageOperationSheet: View {
 
     private func submit() {
         let pages = selection.sorted()
-        dismiss()
         switch action {
         case .extract: onConfirm(.extract(pages: pages, name: outputName.trimmingCharacters(in: .whitespacesAndNewlines)))
         case .rotate: onConfirm(.rotate(pages: pages, degrees: degrees))
@@ -157,7 +156,7 @@ struct ReorderPagesSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Hủy") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Lưu") { dismiss(); onSave(order) }
+                    Button("Lưu") { onSave(order) }
                         .bold().disabled(order.isEmpty || order == Array(0..<document.pageCount))
                 }
             }
@@ -196,7 +195,7 @@ struct CompressPDFSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Hủy") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Nén") { dismiss(); onCompress(CGFloat(quality), CGFloat(maxDimension)) }.bold()
+                    Button("Nén") { onCompress(CGFloat(quality), CGFloat(maxDimension)) }.bold()
                 }
             }
             .tint(.teal)
@@ -225,7 +224,7 @@ struct WatermarkPDFSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Hủy") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Tạo bản sao") { dismiss(); onSave(text.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                    Button("Tạo bản sao") { onSave(text.trimmingCharacters(in: .whitespacesAndNewlines)) }
                         .bold().disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
@@ -260,7 +259,7 @@ struct ProtectPDFSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Hủy") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Bảo vệ") { dismiss(); onProtect(password) }
+                    Button("Bảo vệ") { onProtect(password) }
                         .bold().disabled(password.isEmpty || password != confirmation)
                 }
             }
@@ -372,7 +371,7 @@ struct RenamePDFSheet: View {
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("Hủy") { dismiss() } }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Lưu") { dismiss(); onRename(name.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                        Button("Lưu") { onRename(name.trimmingCharacters(in: .whitespacesAndNewlines)) }
                             .bold().disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }

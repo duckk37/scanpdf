@@ -61,7 +61,6 @@ struct SignatureView: View {
                         let bounds = canvas.drawing.bounds.insetBy(dx: -8, dy: -8)
                         guard !isEmpty, bounds.width > 0, bounds.height > 0 else { return }
                         let image = canvas.drawing.image(from: bounds, scale: 2)
-                        dismiss()
                         onSave(image, placement)
                     }.bold().disabled(isEmpty)
                 }

@@ -271,8 +271,9 @@ struct LibraryView: View {
     }
 
     private func mergeSelection() {
-        let urls = filtered.filter { selection.contains($0.id) }.map { store.url(for: $0) }
-        guard urls.count >= 2 else { error = "Hãy chọn ít nhất hai PDF đang hiển thị."; return }
+        let urls = store.documents.sorted { $0.updatedAt > $1.updatedAt }
+            .filter { selection.contains($0.id) }.map { store.url(for: $0) }
+        guard urls.count >= 2 else { error = "Hãy chọn ít nhất hai PDF trong thư viện."; return }
         let name = mergeName
         busy = true
         Task {
