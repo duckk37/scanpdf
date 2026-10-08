@@ -257,7 +257,7 @@ enum PDFService {
         return output
     }
 
-    /// Uses existing text for digital pages and on-device Vision recognition for scanned pages.
+    /// Uses existing text for digital pages and on-device Vision recognition for pages with images.
     /// Form-feed separators retain page boundaries in exported text.
     static func recognizeText(url: URL) async throws -> String {
         try await Task.detached(priority: .userInitiated) {
@@ -267,11 +267,10 @@ enum PDFService {
                 try Task.checkCancellation()
                 let text: String = try autoreleasepool {
                     guard let page = source.page(at: index) else { throw PDFServiceError.invalidPDF }
-                    if let existing = page.string, !existing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        return existing.trimmingCharacters(in: .whitespacesAndNewlines)
-                    }
+                    let existing = (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !existing.isEmpty, !containsImages(page) { return existing }
                     let image = try render(page: page, maxDimension: 2_600)
-                    return try recognize(image: image).map(\.text).joined(separator: "\n")
+                    return combineText(native: existing, recognized: try recognize(image: image).map(\.text))
                 }
                 results.append(text)
             }
@@ -471,6 +470,107 @@ enum PDFService {
     }
 
     // MARK: - OCR
+
+    /// Text in a watermark or caption does not mean an image page already has a complete text layer.
+    /// Image detection is conservative: unsupported/malformed content also takes the OCR path.
+    static func containsImages(_ page: PDFPage) -> Bool {
+        guard let reference = page.pageRef, let inspection = PDFImageInspection() else { return true }
+        let content = CGPDFContentStreamCreateWithPage(reference)
+        defer { CGPDFContentStreamRelease(content) }
+        inspection.scan(content)
+        return inspection.hasImages
+    }
+
+    /// Keep native text verbatim and add only OCR lines missing from its normalized text.
+    /// Diacritics are retained so distinct Vietnamese words are never equated by accent removal.
+    static func combineText(native: String, recognized: [String]) -> String {
+        let native = native.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedNative = " " + normalizeText(native) + " "
+        let additional = recognized.filter { line in
+            let normalized = normalizeText(line)
+            return !normalized.isEmpty && !normalizedNative.contains(" " + normalized + " ")
+        }
+        return ([native] + additional).filter { !$0.isEmpty }.joined(separator: "\n")
+    }
+
+    private static func normalizeText(_ text: String) -> String {
+        text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+            .folding(options: .caseInsensitive, locale: Locale(identifier: "en_US_POSIX"))
+    }
+
+    /// Follow invoked XObjects, including nested Forms and inherited resource dictionaries.
+    /// Core Graphics calls `EI` for inline images, so they need no separate stream decoder.
+    private final class PDFImageInspection {
+        private let table: CGPDFOperatorTableRef
+        private var depth = 0
+        private var streamsScanned = 0
+        private var activeForms = Set<CGPDFStreamRef>()
+        private(set) var hasImages = false
+
+        init?() {
+            guard let table = CGPDFOperatorTableCreate() else { return nil }
+            self.table = table
+            CGPDFOperatorTableSetCallback(table, "EI") { _, info in
+                guard let info else { return }
+                Unmanaged<PDFImageInspection>.fromOpaque(info).takeUnretainedValue().hasImages = true
+            }
+            CGPDFOperatorTableSetCallback(table, "Do") { scanner, info in
+                guard let info else { return }
+                Unmanaged<PDFImageInspection>.fromOpaque(info).takeUnretainedValue().inspectXObject(scanner)
+            }
+        }
+
+        deinit { CGPDFOperatorTableRelease(table) }
+
+        func scan(_ content: CGPDFContentStreamRef) {
+            guard !hasImages else { return }
+            // Bound recursion and repeated content in unusual or damaged PDFs.
+            guard depth < 24, streamsScanned < 512 else { hasImages = true; return }
+            depth += 1
+            streamsScanned += 1
+            defer { depth -= 1 }
+            let scanner = CGPDFScannerCreate(content, table, Unmanaged.passUnretained(self).toOpaque())
+            defer { CGPDFScannerRelease(scanner) }
+            if !CGPDFScannerScan(scanner) { hasImages = true }
+        }
+
+        private func inspectXObject(_ scanner: CGPDFScannerRef) {
+            guard !hasImages else { return }
+            var name: UnsafePointer<CChar>?
+            let parent = CGPDFScannerGetContentStream(scanner)
+            guard CGPDFScannerPopName(scanner, &name), let name,
+                  let object = CGPDFContentStreamGetResource(parent, "XObject", name) else {
+                hasImages = true
+                return
+            }
+            var stream: CGPDFStreamRef?
+            guard CGPDFObjectGetValue(object, .stream, &stream), let stream,
+                  let dictionary = CGPDFStreamGetDictionary(stream) else {
+                hasImages = true
+                return
+            }
+            var subtype: UnsafePointer<CChar>?
+            guard CGPDFDictionaryGetName(dictionary, "Subtype", &subtype), let subtype else {
+                hasImages = true
+                return
+            }
+            switch String(cString: subtype) {
+            case "Image": hasImages = true
+            case "Form":
+                guard !activeForms.contains(stream) else { hasImages = true; return }
+                activeForms.insert(stream)
+                defer { activeForms.remove(stream) }
+                var resources: CGPDFDictionaryRef?
+                _ = CGPDFDictionaryGetDictionary(dictionary, "Resources", &resources)
+                // When Resources is absent, the parent content supplies inherited resources.
+                let content = CGPDFContentStreamCreateWithStream(stream, resources ?? dictionary, parent)
+                defer { CGPDFContentStreamRelease(content) }
+                scan(content)
+            default:
+                hasImages = true
+            }
+        }
+    }
 
     struct RecognizedLine {
         let text: String

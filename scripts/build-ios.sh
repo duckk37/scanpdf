@@ -23,6 +23,7 @@ xcodebuild test \
   -configuration Debug \
   -destination "platform=iOS Simulator,id=$simulator_id" \
   -destination-timeout 180 \
+  -parallel-testing-enabled NO \
   -derivedDataPath build/DerivedData \
   -resultBundlePath "$result_path" \
   CODE_SIGNING_ALLOWED=NO

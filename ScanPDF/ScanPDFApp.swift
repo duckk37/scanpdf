@@ -9,6 +9,7 @@ struct ScanPDFApp: App {
             RootView()
                 .environmentObject(store)
                 .tint(Theme.teal)
+                .preferredColorScheme(.light)
         }
     }
 }

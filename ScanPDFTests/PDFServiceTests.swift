@@ -165,11 +165,73 @@ final class PDFServiceTests: XCTestCase {
 
     func testExistingTextRecognitionPreservesPageBoundaries() async throws {
         let source = try fixture(["Text on first page", "Text on second page"])
+        XCTAssertFalse(PDFService.containsImages(try XCTUnwrap(PDFService.open(url: source).page(at: 0))))
         let text = try await PDFService.recognizeText(url: source)
         let pages = text.components(separatedBy: "\u{000C}")
         XCTAssertEqual(pages.count, 2)
         XCTAssertTrue(pages[0].contains("first page"))
         XCTAssertTrue(pages[1].contains("second page"))
+    }
+
+    func testOCRRecoversScannedBodyWhenPageAlsoHasNativeWatermarkText() async throws {
+        let size = CGSize(width: 1_200, height: 1_600)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let scannedImage = UIGraphicsImageRenderer(size: size, format: format).image { renderer in
+            UIColor.white.setFill()
+            renderer.fill(CGRect(origin: .zero, size: size))
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.boldSystemFont(ofSize: 64), .foregroundColor: UIColor.black
+            ]
+            ("SCANNED BODY TEXT" as NSString).draw(at: CGPoint(x: 80, y: 120), withAttributes: attributes)
+            ("INVOICE NUMBER 7391" as NSString).draw(at: CGPoint(x: 80, y: 260), withAttributes: attributes)
+        }
+        let scannedURL = directory.appendingPathComponent("scanned.pdf")
+        try write(PDFService.makePDF(images: [scannedImage]), to: scannedURL)
+        let mixedURL = directory.appendingPathComponent("mixed.pdf")
+        try write(PDFService.watermark(url: scannedURL, text: "WATERMARK"), to: mixedURL)
+        let mixedPage = try XCTUnwrap(PDFService.open(url: mixedURL).page(at: 0))
+        let native = try XCTUnwrap(mixedPage.string)
+        // This is the regression setup: native text exists, but does not describe the scan body.
+        XCTAssertTrue(native.contains("WATERMARK"))
+        XCTAssertFalse(native.contains("SCANNED BODY TEXT"))
+        XCTAssertTrue(PDFService.containsImages(mixedPage))
+
+        let recognized = try await PDFService.recognizeText(url: mixedURL)
+        let normalized = recognized.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").uppercased()
+        XCTAssertTrue(normalized.contains("SCANNED BODY TEXT"), recognized)
+        XCTAssertTrue(normalized.contains("INVOICE NUMBER 7391"), recognized)
+        XCTAssertTrue(recognized.contains("WATERMARK"))
+    }
+
+    func testOCRMergeKeepsNativeTextAndVietnameseDiacritics() {
+        let native = "Native   text\nWATERMARK\nma"
+        XCTAssertEqual(PDFService.combineText(native: native, recognized: ["native text", "watermark", "má", "Body text"]),
+                       native + "\nmá\nBody text")
+        XCTAssertEqual(PDFService.combineText(native: native, recognized: []), native)
+        // A single letter must not disappear merely because it occurs inside a native word.
+        XCTAssertEqual(PDFService.combineText(native: "Watermark", recognized: ["a"]), "Watermark\na")
+    }
+
+    func testImageDetectionFindsNestedFormImagesAndInlineImages() throws {
+        let nested = try rawPDF(objects: [
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 320 480] /Resources << /XObject << /Outer 4 0 R >> >> /Contents 5 0 R >>",
+            stream("/Type /XObject /Subtype /Form /BBox [0 0 320 480] /Resources << /XObject << /Inner 6 0 R >> >>", content: "/Inner Do"),
+            stream("", content: "/Outer Do"),
+            stream("/Type /XObject /Subtype /Form /BBox [0 0 320 480] /Resources << /XObject << /Photo 7 0 R >> >>", content: "q 100 0 0 100 0 0 cm /Photo Do Q"),
+            stream("/Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /ASCIIHexDecode", content: "FF0000>")
+        ])
+        XCTAssertTrue(PDFService.containsImages(try XCTUnwrap(nested.page(at: 0))))
+        let inline = try rawPDF(objects: [
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 320 480] /Resources << >> /Contents 4 0 R >>",
+            stream("", content: "q 100 0 0 100 0 0 cm BI /W 1 /H 1 /CS /RGB /BPC 8 /F /AHx ID FF0000> EI Q")
+        ])
+        XCTAssertTrue(PDFService.containsImages(try XCTUnwrap(inline.page(at: 0))))
     }
 
     func testInvisibleOCRLayerIsSearchableAndDoesNotPaintText() throws {
@@ -198,6 +260,24 @@ final class PDFServiceTests: XCTestCase {
     }
 
     // MARK: - Fixtures
+
+    private func stream(_ dictionary: String, content: String) -> String {
+        "<< \(dictionary) /Length \(content.utf8.count) >>\nstream\n\(content)\nendstream"
+    }
+
+    private func rawPDF(objects: [String]) throws -> PDFDocument {
+        var data = Data("%PDF-1.4\n".utf8)
+        var offsets = [Int]()
+        for (index, object) in objects.enumerated() {
+            offsets.append(data.count)
+            data.append(Data("\(index + 1) 0 obj\n\(object)\nendobj\n".utf8))
+        }
+        let xref = data.count
+        data.append(Data("xref\n0 \(objects.count + 1)\n0000000000 65535 f \n".utf8))
+        for offset in offsets { data.append(Data(String(format: "%010d 00000 n \n", offset).utf8)) }
+        data.append(Data("trailer\n<< /Size \(objects.count + 1) /Root 1 0 R >>\nstartxref\n\(xref)\n%%EOF\n".utf8))
+        return try XCTUnwrap(PDFDocument(data: data))
+    }
 
     private func fixture(_ texts: [String]) throws -> URL {
         let url = directory.appendingPathComponent("\(UUID().uuidString).pdf")

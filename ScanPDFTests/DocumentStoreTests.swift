@@ -5,7 +5,7 @@ import UIKit
 
 final class DocumentStoreTests: XCTestCase {
     @MainActor
-    func testSavedDocumentSurvivesReloadAndRename() throws {
+    func testSavedDocumentSurvivesReloadAndRename() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = DocumentStore(rootURL: root)
@@ -27,7 +27,7 @@ final class DocumentStoreTests: XCTestCase {
     }
 
     @MainActor
-    func testRejectsInvalidPDFWithoutAddingLibraryEntry() throws {
+    func testRejectsInvalidPDFWithoutAddingLibraryEntry() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = DocumentStore(rootURL: root)
@@ -38,7 +38,7 @@ final class DocumentStoreTests: XCTestCase {
     }
 
     @MainActor
-    func testRecoversPDFFilesWhenMetadataIsCorrupt() throws {
+    func testRecoversPDFFilesWhenMetadataIsCorrupt() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = DocumentStore(rootURL: root)
