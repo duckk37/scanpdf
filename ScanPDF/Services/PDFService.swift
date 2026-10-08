@@ -22,6 +22,46 @@ enum ScanFilter: String, CaseIterable, Identifiable {
     }
 }
 
+enum ScanPaperLayout: String, CaseIterable, Identifiable {
+    case original, a4, letter
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .original: return "Theo ảnh"
+        case .a4: return "A4"
+        case .letter: return "Letter"
+        }
+    }
+}
+
+enum PDFImageFormat: String, CaseIterable, Identifiable {
+    case png, jpeg
+    var id: String { rawValue }
+    var title: String { self == .png ? "PNG" : "JPEG" }
+    var fileExtension: String { self == .png ? "png" : "jpg" }
+}
+
+struct PDFPageImage {
+    let pageIndex: Int
+    let data: Data
+    let pixelSize: CGSize
+}
+
+enum PageNumberPosition: String, CaseIterable, Identifiable {
+    case topLeft, topCenter, topRight, bottomLeft, bottomCenter, bottomRight
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .topLeft: return "Trên trái"
+        case .topCenter: return "Trên giữa"
+        case .topRight: return "Trên phải"
+        case .bottomLeft: return "Dưới trái"
+        case .bottomCenter: return "Dưới giữa"
+        case .bottomRight: return "Dưới phải"
+        }
+    }
+}
+
 enum PDFServiceError: LocalizedError, Equatable {
     case invalidPDF
     case emptyDocument
@@ -38,6 +78,10 @@ enum PDFServiceError: LocalizedError, Equatable {
     case invalidCompression
     case emptyWatermark
     case invalidSignatureRect
+    case invalidInsertionIndex
+    case invalidExportSettings
+    case invalidStartNumber
+    case exportLimitExceeded
 
     var errorDescription: String? {
         switch self {
@@ -56,16 +100,33 @@ enum PDFServiceError: LocalizedError, Equatable {
         case .invalidCompression: return "Chất lượng nén phải từ 0 đến 1 và kích thước ảnh phải lớn hơn 0."
         case .emptyWatermark: return "Vui lòng nhập nội dung watermark."
         case .invalidSignatureRect: return "Vị trí chữ ký phải nằm trong trang và có kích thước lớn hơn 0."
+        case .invalidInsertionIndex: return "Vị trí chèn phải nằm giữa các trang hoặc ở cuối tài liệu."
+        case .invalidExportSettings: return "Kích thước xuất ảnh phải lớn hơn 0; chất lượng JPEG phải từ 0 đến 1."
+        case .invalidStartNumber: return "Số trang bắt đầu phải từ 1 đến 1.000.000."
+        case .exportLimitExceeded: return "Mỗi lần chỉ xuất tối đa 40 trang và 40 triệu điểm ảnh. Hãy chọn ít trang hơn hoặc giảm kích thước ảnh."
         }
     }
 }
 
 /// All page indices are zero-based. Operations produce a new document and never overwrite a source.
-/// Merge/extract/rotate/delete/reorder retain PDF pages, their text and annotations.
+/// Merge/extract/rotate/delete/reorder/insert/duplicate retain PDF pages, their text and annotations.
 enum PDFService {
     /// Uses the same image pipeline as PDF export, at a smaller size for the review screen.
-    static func preview(image: UIImage, filter: ScanFilter) throws -> UIImage {
-        try prepare(image: image, filter: filter, maxDimension: 1_000)
+    static func preview(image: UIImage, filter: ScanFilter, paper: ScanPaperLayout = .original) throws -> UIImage {
+        let prepared = try prepare(image: image, filter: filter, maxDimension: 1_000)
+        guard paper != .original else { return prepared }
+        let layout = scanGeometry(for: prepared.size, paper: paper)
+        let ratio = 1_000 / max(layout.pageSize.width, layout.pageSize.height)
+        let size = CGSize(width: layout.pageSize.width * ratio, height: layout.pageSize.height * ratio)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: size, format: format).image { renderer in
+            UIColor.white.setFill()
+            renderer.fill(CGRect(origin: .zero, size: size))
+            renderer.cgContext.scaleBy(x: ratio, y: ratio)
+            prepared.draw(in: layout.imageRect)
+        }
     }
 
     static func open(url: URL) throws -> PDFDocument {
@@ -75,13 +136,16 @@ enum PDFService {
         return document
     }
 
-    static func makePDF(images: [UIImage], filter: ScanFilter = .original) throws -> PDFDocument {
+    static func makePDF(images: [UIImage], filter: ScanFilter = .original,
+                        paper: ScanPaperLayout = .original) throws -> PDFDocument {
         guard !images.isEmpty else { throw PDFServiceError.emptyDocument }
         let output = PDFDocument()
         for image in images {
             try autoreleasepool {
                 let prepared = try prepare(image: image, filter: filter, maxDimension: 3_000)
-                let data = try imagePDFData(image: prepared, quality: 0.92)
+                let layout = scanGeometry(for: prepared.size, paper: paper)
+                let data = try imagePDFData(image: prepared, quality: 0.92,
+                                            pageSize: layout.pageSize, imageRect: layout.imageRect)
                 try appendRenderedData(data, to: output)
             }
         }
@@ -136,6 +200,116 @@ enum PDFService {
             throw PDFServiceError.invalidOrder
         }
         return try copyPages(source, indices: order)
+    }
+
+    /// Inserts all pages of another unlocked PDF before `index`; pageCount appends at the end.
+    static func insert(url: URL, from sourceURL: URL, at index: Int) throws -> PDFDocument {
+        let target = try open(url: url)
+        guard (0...target.pageCount).contains(index) else { throw PDFServiceError.invalidInsertionIndex }
+        let source = try open(url: sourceURL)
+        let output = PDFDocument()
+        output.documentAttributes = target.documentAttributes
+        return try withExtendedLifetime((target, source)) {
+            for position in 0...target.pageCount {
+                if position == index {
+                    for sourceIndex in 0..<source.pageCount {
+                        guard let page = source.page(at: sourceIndex) else { throw PDFServiceError.invalidPDF }
+                        try appendCopy(page, to: output)
+                    }
+                }
+                if position < target.pageCount {
+                    guard let page = target.page(at: position) else { throw PDFServiceError.invalidPDF }
+                    try appendCopy(page, to: output)
+                }
+            }
+            return output
+        }
+    }
+
+    /// Adds one independent copy immediately after each selected original page.
+    static func duplicate(url: URL, pages: [Int]) throws -> PDFDocument {
+        let source = try open(url: url)
+        try validate(pages: pages, in: source)
+        let selected = Set(pages)
+        let output = PDFDocument()
+        output.documentAttributes = source.documentAttributes
+        return try withExtendedLifetime(source) {
+            for index in 0..<source.pageCount {
+                guard let page = source.page(at: index) else { throw PDFServiceError.invalidPDF }
+                try appendCopy(page, to: output)
+                if selected.contains(index) { try appendCopy(page, to: output) }
+            }
+            return output
+        }
+    }
+
+    /// Renders the displayed crop box and visible annotations; returns bytes without creating files.
+    /// Results follow the requested page order. Bounds: 40 pages, 40 million pixels, 6,000 pixels/edge.
+    static func exportImages(url: URL, pages: [Int]? = nil, format: PDFImageFormat = .png,
+                             maxDimension: CGFloat = 2_000, quality: CGFloat = 0.9) throws -> [PDFPageImage] {
+        guard maxDimension.isFinite, maxDimension > 0, quality.isFinite, (0...1).contains(quality) else {
+            throw PDFServiceError.invalidExportSettings
+        }
+        let source = try open(url: url)
+        let indices = pages ?? Array(0..<source.pageCount)
+        try validate(pages: indices, in: source)
+        guard indices.count <= 40 else { throw PDFServiceError.exportLimitExceeded }
+        var totalPixels: CGFloat = 0
+        for index in indices {
+            guard let page = source.page(at: index) else { throw PDFServiceError.invalidPDF }
+            let size = try displayedSize(of: page)
+            let ratio = min(4, min(6_000, maxDimension) / max(size.width, size.height))
+            totalPixels += ceil(max(1, size.width * ratio)) * ceil(max(1, size.height * ratio))
+            guard totalPixels <= 40_000_000 else { throw PDFServiceError.exportLimitExceeded }
+        }
+        return try withExtendedLifetime(source) {
+            try indices.map { index in
+                try autoreleasepool {
+                    guard let page = source.page(at: index) else { throw PDFServiceError.invalidPDF }
+                    let image = try render(page: page, maxDimension: min(6_000, maxDimension))
+                    let data = format == .png ? image.pngData() : image.jpegData(compressionQuality: quality)
+                    guard let data, let raster = image.cgImage else { throw PDFServiceError.renderingFailed }
+                    return PDFPageImage(pageIndex: index, data: data,
+                                        pixelSize: CGSize(width: CGFloat(raster.width), height: CGFloat(raster.height)))
+                }
+            }
+        }
+    }
+
+    /// Adds permanent numbers in displayed page coordinates, preserving underlying vector/text content.
+    /// Existing visible annotations are flattened, as with watermarks.
+    static func numberPages(url: URL, position: PageNumberPosition = .bottomCenter, start: Int = 1) throws -> PDFDocument {
+        guard (1...1_000_000).contains(start) else { throw PDFServiceError.invalidStartNumber }
+        let source = try open(url: url)
+        let output = PDFDocument()
+        output.documentAttributes = source.documentAttributes
+        guard source.pageCount - 1 <= Int.max - start else { throw PDFServiceError.invalidStartNumber }
+        for index in 0..<source.pageCount {
+            try autoreleasepool {
+                guard let page = source.page(at: index) else { throw PDFServiceError.invalidPDF }
+                let data = try decoratedPDFData(page) { bounds, _ in
+                    let text = String(start + index) as NSString
+                    let font = UIFont.systemFont(ofSize: min(14, min(bounds.width, bounds.height) * 0.05))
+                    let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.black]
+                    let size = text.size(withAttributes: attributes)
+                    let margin = min(24, min(bounds.width, bounds.height) * 0.08)
+                    let x: CGFloat
+                    switch position {
+                    case .topLeft, .bottomLeft: x = margin
+                    case .topCenter, .bottomCenter: x = (bounds.width - size.width) / 2
+                    case .topRight, .bottomRight: x = bounds.width - margin - size.width
+                    }
+                    let y: CGFloat
+                    switch position {
+                    case .topLeft, .topCenter, .topRight: y = margin
+                    case .bottomLeft, .bottomCenter, .bottomRight: y = bounds.height - margin - size.height
+                    }
+                    text.draw(at: CGPoint(x: max(0, x), y: max(0, y)), withAttributes: attributes)
+                }
+                try appendRenderedData(data, to: output)
+            }
+        }
+        return output
     }
 
     /// Creates JPEG-backed pages; original text, forms, links and editable annotations are flattened.
@@ -279,7 +453,8 @@ enum PDFService {
     }
 
     /// Each scan page receives invisible, selectable text positioned over its recognized lines.
-    static func searchablePDF(images: [UIImage], filter: ScanFilter = .original) async throws -> PDFDocument {
+    static func searchablePDF(images: [UIImage], filter: ScanFilter = .original,
+                              paper: ScanPaperLayout = .original) async throws -> PDFDocument {
         guard !images.isEmpty else { throw PDFServiceError.emptyDocument }
         return try await Task.detached(priority: .userInitiated) {
             let output = PDFDocument()
@@ -288,12 +463,23 @@ enum PDFService {
                 try autoreleasepool {
                     let prepared = try prepare(image: image, filter: filter, maxDimension: 3_000)
                     let recognized = try recognize(image: prepared)
-                    let size = scanPageSize(for: prepared.size)
-                    let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: size))
+                    let layout = scanGeometry(for: prepared.size, paper: paper)
+                    let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: layout.pageSize))
                     let data = renderer.pdfData { context in
                         context.beginPage()
-                        prepared.draw(in: CGRect(origin: .zero, size: size))
-                        drawSearchableText(recognized, pageSize: size, in: context.cgContext)
+                        UIColor.white.setFill()
+                        context.fill(CGRect(origin: .zero, size: layout.pageSize))
+                        prepared.draw(in: layout.imageRect)
+                        let positioned = recognized.map { line in
+                            // Vision uses the image's bottom-left origin; PDF coordinates include paper margins.
+                            RecognizedLine(text: line.text, bounds: CGRect(
+                                x: (layout.imageRect.minX + line.bounds.minX * layout.imageRect.width) / layout.pageSize.width,
+                                y: (layout.pageSize.height - layout.imageRect.maxY + line.bounds.minY * layout.imageRect.height) / layout.pageSize.height,
+                                width: line.bounds.width * layout.imageRect.width / layout.pageSize.width,
+                                height: line.bounds.height * layout.imageRect.height / layout.pageSize.height
+                            ))
+                        }
+                        drawSearchableText(positioned, pageSize: layout.pageSize, in: context.cgContext)
                     }
                     try appendRenderedData(data, to: output)
                 }
@@ -352,7 +538,8 @@ enum PDFService {
         return output
     }
 
-    private static func imagePDFData(image: UIImage, quality: CGFloat, pageSize: CGSize? = nil) throws -> Data {
+    private static func imagePDFData(image: UIImage, quality: CGFloat, pageSize: CGSize? = nil,
+                                     imageRect: CGRect? = nil) throws -> Data {
         guard let jpeg = image.jpegData(compressionQuality: quality), let encoded = UIImage(data: jpeg) else {
             throw PDFServiceError.invalidImage
         }
@@ -360,8 +547,28 @@ enum PDFService {
         let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: size))
         return renderer.pdfData { context in
             context.beginPage()
-            encoded.draw(in: CGRect(origin: .zero, size: size))
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            encoded.draw(in: imageRect ?? CGRect(origin: .zero, size: size))
         }
+    }
+
+    private struct ScanGeometry {
+        let pageSize: CGSize
+        let imageRect: CGRect
+    }
+
+    private static func scanGeometry(for imageSize: CGSize, paper: ScanPaperLayout) -> ScanGeometry {
+        let size: CGSize
+        switch paper {
+        case .original:
+            size = scanPageSize(for: imageSize)
+            return ScanGeometry(pageSize: size, imageRect: CGRect(origin: .zero, size: size))
+        case .a4: size = CGSize(width: 595.28, height: 841.89)
+        case .letter: size = CGSize(width: 612, height: 792)
+        }
+        let content = CGRect(origin: .zero, size: size).insetBy(dx: 24, dy: 24)
+        return ScanGeometry(pageSize: size, imageRect: aspectFit(imageSize, in: content))
     }
 
     private static func scanPageSize(for size: CGSize) -> CGSize {

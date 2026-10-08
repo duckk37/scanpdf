@@ -119,6 +119,141 @@ final class PDFServiceTests: XCTestCase {
         assertError(.invalidOrder) { _ = try PDFService.reorder(url: source, order: [0, 1]) }
     }
 
+    func testInsertPreservesPageOrderTextAndSourceDocuments() throws {
+        let target = try fixture(["Alpha", "Omega"])
+        let inserted = try fixture(["Inserted one", "Inserted two"])
+        let result = try persisted(PDFService.insert(url: target, from: inserted, at: 1))
+        XCTAssertEqual(result.pageCount, 4)
+        for (index, text) in ["Alpha", "Inserted one", "Inserted two", "Omega"].enumerated() {
+            XCTAssertTrue(try XCTUnwrap(result.page(at: index)?.string).contains(text))
+        }
+        let prepend = try persisted(PDFService.insert(url: target, from: inserted, at: 0))
+        let append = try persisted(PDFService.insert(url: target, from: inserted, at: 2))
+        XCTAssertTrue(try XCTUnwrap(prepend.page(at: 0)?.string).contains("Inserted one"))
+        XCTAssertTrue(try XCTUnwrap(append.page(at: 3)?.string).contains("Inserted two"))
+        XCTAssertEqual(try PDFService.open(url: target).pageCount, 2)
+        XCTAssertEqual(try PDFService.open(url: inserted).pageCount, 2)
+        assertError(.invalidInsertionIndex) { _ = try PDFService.insert(url: target, from: inserted, at: -1) }
+        assertError(.invalidInsertionIndex) { _ = try PDFService.insert(url: target, from: inserted, at: 3) }
+        let protectedURL = directory.appendingPathComponent("insert-protected.pdf")
+        try PDFService.protect(url: inserted, password: "secret").write(to: protectedURL)
+        assertError(.lockedDocument) { _ = try PDFService.insert(url: target, from: protectedURL, at: 1) }
+    }
+
+    func testDuplicateCreatesIndependentCopiesImmediatelyAfterOriginalPages() throws {
+        let source = try fixture(["Alpha", "Beta", "Gamma"])
+        let result = try persisted(PDFService.duplicate(url: source, pages: [2, 0]))
+        XCTAssertEqual(result.pageCount, 5)
+        for (index, text) in ["Alpha", "Alpha", "Beta", "Gamma", "Gamma"].enumerated() {
+            XCTAssertTrue(try XCTUnwrap(result.page(at: index)?.string).contains(text))
+        }
+        result.page(at: 0)?.rotation = 90
+        XCTAssertEqual(result.page(at: 1)?.rotation, 0)
+        XCTAssertEqual(try PDFService.open(url: source).pageCount, 3)
+        assertError(.duplicatePages) { _ = try PDFService.duplicate(url: source, pages: [1, 1]) }
+        assertError(.invalidPages) { _ = try PDFService.duplicate(url: source, pages: [3]) }
+    }
+
+    func testPageNumbersPreserveTextAndOccupyChosenCorner() throws {
+        let source = try fixture(["Alpha", "Beta"])
+        let numbered = try persisted(PDFService.numberPages(url: source, position: .bottomRight, start: 42))
+        XCTAssertEqual(numbered.pageCount, 2)
+        for (index, body) in ["Alpha", "Beta"].enumerated() {
+            let page = try XCTUnwrap(numbered.page(at: index))
+            XCTAssertTrue(try XCTUnwrap(page.string).contains(body), page.string ?? "nil page text")
+            let number = try XCTUnwrap(page.selection(for: CGRect(x: 240, y: 5, width: 80, height: 60))?.string)
+            XCTAssertTrue(number.contains(String(42 + index)), number)
+        }
+        let top = try persisted(PDFService.numberPages(url: source, position: .topLeft, start: 7))
+        let topNumber = try XCTUnwrap(top.page(at: 0)?.selection(for: CGRect(x: 0, y: 410, width: 100, height: 70))?.string)
+        XCTAssertTrue(topNumber.contains("7"), topNumber)
+        XCTAssertFalse((try PDFService.open(url: source).page(at: 0)?.string ?? "").contains("42"))
+        assertError(.invalidStartNumber) { _ = try PDFService.numberPages(url: source, start: 0) }
+        assertError(.invalidStartNumber) { _ = try PDFService.numberPages(url: source, start: 1_000_001) }
+    }
+
+    func testExportImagesUsesRequestedOrderEncodingAndActualPixels() throws {
+        let source = directory.appendingPathComponent("export-colors.pdf")
+        try write(PDFService.makePDF(images: [image(size: CGSize(width: 400, height: 600), color: .red),
+                                               image(size: CGSize(width: 600, height: 400), color: .blue)]), to: source)
+        let exported = try PDFService.exportImages(url: source, pages: [1, 0], format: .png, maxDimension: 800)
+        XCTAssertEqual(exported.map(\.pageIndex), [1, 0])
+        for result in exported {
+            XCTAssertEqual(Array(result.data.prefix(8)), [137, 80, 78, 71, 13, 10, 26, 10])
+            let decoded = try XCTUnwrap(UIImage(data: result.data))
+            let raster = try XCTUnwrap(decoded.cgImage)
+            XCTAssertEqual(result.pixelSize, CGSize(width: CGFloat(raster.width), height: CGFloat(raster.height)))
+            XCTAssertLessThanOrEqual(max(result.pixelSize.width, result.pixelSize.height), 800)
+        }
+        let first = try pixel(in: XCTUnwrap(UIImage(data: exported[0].data)), normalizedPoint: CGPoint(x: 0.5, y: 0.5))
+        let second = try pixel(in: XCTUnwrap(UIImage(data: exported[1].data)), normalizedPoint: CGPoint(x: 0.5, y: 0.5))
+        XCTAssertGreaterThan(first.blue, 0.9)
+        XCTAssertLessThan(first.red, 0.1)
+        XCTAssertGreaterThan(second.red, 0.9)
+        XCTAssertLessThan(second.blue, 0.1)
+        let jpeg = try XCTUnwrap(PDFService.exportImages(url: source, pages: [1], format: .jpeg, maxDimension: 800, quality: 0.6).first)
+        XCTAssertEqual(Array(jpeg.data.prefix(2)), [255, 216])
+        let jpegColor = try pixel(in: XCTUnwrap(UIImage(data: jpeg.data)), normalizedPoint: CGPoint(x: 0.5, y: 0.5))
+        XCTAssertGreaterThan(jpegColor.blue, 0.85)
+        assertError(.invalidExportSettings) { _ = try PDFService.exportImages(url: source, maxDimension: 0) }
+        assertError(.invalidExportSettings) { _ = try PDFService.exportImages(url: source, format: .jpeg, quality: 2) }
+    }
+
+    func testExportPreflightsPageAndPixelLimitsBeforeAllocatingImages() throws {
+        let many = try fixture((0..<41).map { "Page \($0)" })
+        assertError(.exportLimitExceeded) { _ = try PDFService.exportImages(url: many) }
+        let largeURL = directory.appendingPathComponent("large-pages.pdf")
+        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 1_000, height: 1_000))
+        try renderer.pdfData { context in
+            for _ in 0..<3 { context.beginPage() }
+        }.write(to: largeURL)
+        assertError(.exportLimitExceeded) { _ = try PDFService.exportImages(url: largeURL, maxDimension: 6_000) }
+    }
+
+    func testPaperLayoutsKeepLandscapeAspectRatioAndWhiteMargins() throws {
+        let scan = image(size: CGSize(width: 400, height: 200), color: .red)
+        for paper in [ScanPaperLayout.a4, .letter] {
+            let document = try persisted(PDFService.makePDF(images: [scan], paper: paper))
+            let page = try XCTUnwrap(document.page(at: 0))
+            let expected = paper == .a4 ? CGSize(width: 595.28, height: 841.89) : CGSize(width: 612, height: 792)
+            XCTAssertEqual(page.bounds(for: .mediaBox).width, expected.width, accuracy: 0.02)
+            XCTAssertEqual(page.bounds(for: .mediaBox).height, expected.height, accuracy: 0.02)
+            for raster in [page.thumbnail(of: expected, for: .cropBox), try PDFService.preview(image: scan, filter: .original, paper: paper)] {
+                let center = try pixel(in: raster, normalizedPoint: CGPoint(x: 0.5, y: 0.5))
+                let margin = try pixel(in: raster, normalizedPoint: CGPoint(x: 0.01, y: 0.5))
+                let above = try pixel(in: raster, normalizedPoint: CGPoint(x: 0.5, y: 0.30))
+                let inside = try pixel(in: raster, normalizedPoint: CGPoint(x: 0.5, y: 0.35))
+                XCTAssertLessThan(center.green, 0.1)
+                XCTAssertGreaterThan(margin.green, 0.9)
+                XCTAssertGreaterThan(above.green, 0.9)
+                XCTAssertLessThan(inside.green, 0.1)
+            }
+        }
+    }
+
+    func testSearchableA4MapsOCRTextIntoLetterboxedImageArea() async throws {
+        let size = CGSize(width: 1_200, height: 600)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let scan = UIGraphicsImageRenderer(size: size, format: format).image { renderer in
+            UIColor.white.setFill()
+            renderer.fill(CGRect(origin: .zero, size: size))
+            ("PAPER LAYOUT TEXT" as NSString).draw(at: CGPoint(x: 80, y: 80), withAttributes: [
+                .font: UIFont.boldSystemFont(ofSize: 64), .foregroundColor: UIColor.black
+            ])
+        }
+        let searchable = try await PDFService.searchablePDF(images: [scan], paper: .a4)
+        let document = try persisted(searchable)
+        let page = try XCTUnwrap(document.page(at: 0))
+        XCTAssertEqual(page.bounds(for: .mediaBox).height, 841.89, accuracy: 0.02)
+        XCTAssertTrue(try XCTUnwrap(page.string).contains("PAPER LAYOUT TEXT"), page.string ?? "nil page text")
+        XCTAssertFalse(document.findString("LAYOUT", withOptions: []).isEmpty)
+        // A wide scan occupies the page's middle band. An unshifted OCR box would land above it.
+        let text = try XCTUnwrap(page.selection(for: CGRect(x: 24, y: 440, width: 550, height: 120))?.string)
+        XCTAssertTrue(text.contains("LAYOUT"), text)
+    }
+
     func testProtectionRequiresPasswordAfterPersistenceAndUnlockRemovesEncryption() throws {
         let source = try fixture(["Private document", "Page two"])
         let protectedURL = directory.appendingPathComponent("protected.pdf")

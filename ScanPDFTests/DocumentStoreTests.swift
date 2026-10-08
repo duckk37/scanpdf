@@ -51,4 +51,30 @@ final class DocumentStoreTests: XCTestCase {
         XCTAssertEqual(recovered.documents.first?.pageCount, 1)
         XCTAssertTrue(FileManager.default.fileExists(atPath: recovered.url(for: item).path))
     }
+
+    @MainActor
+    func testUpgradesLegacyLibraryAndPersistsFavoriteWithoutChangingPDF() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DocumentStore(rootURL: root)
+        let pdf = try PDFService.makePDF(images: [UIGraphicsImageRenderer(size: CGSize(width: 100, height: 100)).image { _ in }])
+        let item = try store.save(document: pdf, name: "Tài liệu cũ")
+        let originalData = try Data(contentsOf: store.url(for: item))
+        let indexURL = root.appendingPathComponent("library.json")
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: indexURL)) as? [[String: Any]])
+        legacy[0].removeValue(forKey: "isFavorite")
+        try JSONSerialization.data(withJSONObject: legacy).write(to: indexURL, options: .atomic)
+
+        let upgraded = DocumentStore(rootURL: root)
+        XCTAssertNil(upgraded.initializationError)
+        XCTAssertEqual(upgraded.documents.first?.name, item.name)
+        XCTAssertEqual(upgraded.documents.first?.isFavorite, false)
+        try upgraded.toggleFavorite(item)
+        let reloaded = DocumentStore(rootURL: root)
+        XCTAssertEqual(reloaded.documents.first?.isFavorite, true)
+        XCTAssertEqual(reloaded.documents.first?.updatedAt, item.updatedAt)
+        XCTAssertEqual(try Data(contentsOf: reloaded.url(for: item)), originalData)
+        try reloaded.toggleFavorite(item)
+        XCTAssertEqual(DocumentStore(rootURL: root).documents.first?.isFavorite, false)
+    }
 }

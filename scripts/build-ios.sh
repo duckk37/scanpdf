@@ -3,6 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 command -v xcodegen >/dev/null || { echo "Install XcodeGen first: brew install xcodegen" >&2; exit 1; }
+python3 -m unittest discover -s scripts/tests -v
 xcodegen generate --spec project.yml
 mkdir -p build
 

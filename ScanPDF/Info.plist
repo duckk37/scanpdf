@@ -24,6 +24,8 @@
     <true/>
     <key>NSCameraUsageDescription</key>
     <string>ScanPDF cần camera để quét tài liệu thành PDF trên thiết bị của bạn.</string>
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>ScanPDF lưu các trang PDF thành ảnh khi bạn chọn Lưu ảnh.</string>
     <key>UILaunchScreen</key>
     <dict/>
     <key>UIApplicationSceneManifest</key>

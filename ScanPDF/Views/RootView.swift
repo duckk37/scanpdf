@@ -40,7 +40,7 @@ struct AboutView: View {
                             Text("Quét gọn. Lưu trọn.").foregroundStyle(.secondary)
                         }
                     }.padding(.vertical, 14)
-                    LabeledContent("Phiên bản", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")
+                    LabeledContent("Phiên bản", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.1.0")
                     LabeledContent("Tài liệu", value: "\(store.documents.count)")
                     LabeledContent("Dung lượng", value: ByteCountFormatter.string(fromByteCount: store.documents.reduce(0) { $0 + $1.byteCount }, countStyle: .file))
                 }

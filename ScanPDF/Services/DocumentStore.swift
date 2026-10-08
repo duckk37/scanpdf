@@ -115,6 +115,14 @@ final class DocumentStore: ObservableObject {
         documents = updated
     }
 
+    func toggleFavorite(_ item: LibraryDocument) throws {
+        guard let position = documents.firstIndex(where: { $0.id == item.id }) else { throw LibraryError.missing }
+        var updated = documents
+        updated[position].isFavorite.toggle()
+        try persist(updated)
+        documents = updated
+    }
+
     func delete(_ item: LibraryDocument) throws {
         guard documents.contains(where: { $0.id == item.id }) else { throw LibraryError.missing }
         let destination = url(for: item)

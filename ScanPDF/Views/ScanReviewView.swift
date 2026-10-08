@@ -15,6 +15,7 @@ struct ScanReviewView: View {
     @State private var current = 0
     @State private var name = "Bản quét " + Date.now.formatted(.dateTime.day().month().year())
     @State private var filter: ScanFilter = .original
+    @State private var paper: ScanPaperLayout = .original
     @State private var searchable = false
     @State private var busy = false
     @State private var showOrder = false
@@ -59,6 +60,11 @@ struct ScanReviewView: View {
                         Picker("Bộ lọc", selection: $filter) {
                             ForEach(ScanFilter.allCases) { option in Text(option.title).tag(option) }
                         }.pickerStyle(.segmented)
+                        Picker("Khổ giấy", selection: $paper) {
+                            ForEach(ScanPaperLayout.allCases) { option in Text(option.title).tag(option) }
+                        }.pickerStyle(.segmented)
+                        Text(paper == .original ? "Giữ tỷ lệ ảnh gốc của từng trang." : "Đặt trọn ảnh vào trang giấy với lề trắng, giữ nguyên tỷ lệ.")
+                            .font(.caption).foregroundStyle(.secondary)
                         Toggle("PDF có thể tìm kiếm", isOn: $searchable).font(.subheadline.weight(.medium))
                         Text(searchable ? "Thêm lớp chữ OCR để tìm và sao chép. Thời gian xử lý tùy số trang; ngôn ngữ nhận dạng phụ thuộc iOS." : "Lưu nhanh từ ảnh. Bạn có thể nhận dạng chữ sau trong Công cụ PDF.")
                             .font(.caption).foregroundStyle(.secondary)
@@ -78,7 +84,7 @@ struct ScanReviewView: View {
             .interactiveDismissDisabled(busy)
             .disabled(busy)
             .overlay { if busy { BusyOverlay(title: searchable ? "Đang nhận dạng và tạo PDF…" : "Đang tạo PDF…") } }
-            .task(id: "\(pages.indices.contains(current) ? pages[current].id.uuidString : "empty")-\(filter.rawValue)-\(current)") { await updatePreview() }
+            .task(id: "\(pages.indices.contains(current) ? pages[current].id.uuidString : "empty")-\(filter.rawValue)-\(paper.rawValue)-\(current)") { await updatePreview() }
             .sheet(isPresented: $showOrder) {
                 NavigationStack {
                     List {
@@ -103,6 +109,7 @@ struct ScanReviewView: View {
     private func save() {
         let images = pages.map(\.image)
         let chosenFilter = filter
+        let chosenPaper = paper
         let useOCR = searchable
         let title = name
         busy = true
@@ -110,8 +117,8 @@ struct ScanReviewView: View {
             defer { busy = false }
             do {
                 let pdf = try await Task.detached(priority: .userInitiated) {
-                    if useOCR { return try await PDFService.searchablePDF(images: images, filter: chosenFilter) }
-                    return try PDFService.makePDF(images: images, filter: chosenFilter)
+                    if useOCR { return try await PDFService.searchablePDF(images: images, filter: chosenFilter, paper: chosenPaper) }
+                    return try PDFService.makePDF(images: images, filter: chosenFilter, paper: chosenPaper)
                 }.value
                 let item = try store.save(document: pdf, name: title)
                 onSave(item)
@@ -136,10 +143,11 @@ struct ScanReviewView: View {
         guard pages.indices.contains(current) else { return }
         let image = pages[current].image
         let choice = filter
+        let chosenPaper = paper
         preview = nil
         do {
             let processed = try await Task.detached(priority: .userInitiated) {
-                try PDFService.preview(image: image, filter: choice)
+                try PDFService.preview(image: image, filter: choice, paper: chosenPaper)
             }.value
             guard !Task.isCancelled else { return }
             preview = processed

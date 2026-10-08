@@ -1,13 +1,22 @@
 # ScanPDF
 
-Ứng dụng quét tài liệu và xử lý PDF bằng SwiftUI, cho iPhone/iPad chạy iOS 17 trở lên. Mã nguồn dùng PDFKit, Vision, VisionKit và PhotosUI của Apple, không có thư viện runtime bên thứ ba.
+Ứng dụng quét tài liệu và xử lý PDF bằng SwiftUI, cho iPhone/iPad chạy iOS 17 trở lên. Phiên bản mã nguồn hiện tại: **1.1.0**. Mã nguồn dùng PDFKit, Vision, VisionKit và PhotosUI của Apple, không có thư viện runtime bên thứ ba.
+
+## Thay đổi trong 1.1.0
+
+- Xuất những trang được chọn của PDF thành PNG hoặc JPEG; chia sẻ từng file ảnh qua giao diện chia sẻ iOS.
+- Chèn các trang từ một PDF khác vào tài liệu và nhân bản trang.
+- Tạo bản sao có số trang.
+- Tạo PDF scan với khổ trang theo ảnh gốc, A4 hoặc Letter; A4/Letter giữ toàn bộ ảnh và thêm lề trắng nếu cần.
+- Đánh dấu yêu thích và sắp xếp thư viện. Thư viện của phiên bản 1.0 vẫn được đọc khi cập nhật app.
 
 ## Tính năng
 
 - Quét nhiều trang bằng camera: tự nhận diện mép giấy, chỉnh phối cảnh và cắt trang qua giao diện quét của iOS.
-- Tạo PDF từ ảnh, nhập PDF từ ứng dụng Tệp; giữ màu gốc, chuyển xám hoặc đen trắng khi tạo tài liệu.
-- Thư viện cục bộ: tìm theo tên, đổi tên, xóa, xem trước, chia sẻ và in PDF.
-- Gộp PDF; trích xuất trang; xoay, xóa và thay đổi thứ tự trang.
+- Tạo PDF từ ảnh, nhập PDF từ ứng dụng Tệp; giữ màu gốc, chuyển xám hoặc đen trắng khi tạo tài liệu; chọn khổ trang theo ảnh, A4 hoặc Letter.
+- Thư viện cục bộ: tìm theo tên, yêu thích, sắp xếp, đổi tên, xóa, xem trước, chia sẻ và in PDF.
+- Gộp PDF; chèn PDF; trích xuất, nhân bản, xoay, xóa và thay đổi thứ tự trang.
+- Xuất các trang PDF được chọn thành PNG/JPEG, chia sẻ nhiều file ảnh; tạo bản sao PDF có số trang.
 - Nén PDF thành bản sao, thêm watermark và chữ ký vẽ tay tại các vị trí được chọn.
 - Đặt mật khẩu PDF và tạo bản mở khóa khi biết mật khẩu.
 - OCR trên thiết bị để lấy văn bản, tạo PDF có lớp văn bản có thể tìm kiếm.
@@ -15,8 +24,10 @@
 ## Giới hạn và dữ liệu
 
 - Camera/quét tài liệu cần iPhone hoặc iPad thật có hỗ trợ VisionKit. Simulator dùng để kiểm tra phần xử lý PDF và giao diện; không kiểm chứng camera.
+- Khổ A4/Letter đặt ảnh vừa trong trang và giữ tỷ lệ, có thể xuất hiện lề trắng; lựa chọn khổ giấy này không cắt bớt nội dung ảnh. Lớp OCR được đặt theo vị trí ảnh trên trang.
 - OCR phụ thuộc ngôn ngữ mà Vision hỗ trợ trên phiên bản iOS của thiết bị. App ưu tiên tiếng Việt nếu có, dùng tiếng Anh làm dự phòng; chữ viết tay, dấu tiếng Việt, bố cục phức tạp có thể nhận sai. Kiểm tra văn bản trước khi sử dụng.
 - Nén bằng cách raster hóa trang và mã hóa ảnh. Bản nén có thể mất lớp văn bản có thể tìm kiếm, vector, liên kết và các cấu trúc PDF tương tác; dung lượng có thể tăng với PDF vốn đã tối ưu. Tài liệu gốc vẫn nằm trong thư viện.
+- PNG/JPEG xuất ra là ảnh tĩnh của từng trang, không giữ lớp văn bản có thể tìm kiếm, liên kết hoặc biểu mẫu PDF. Chia sẻ chọn nhiều trang tạo nhiều file ảnh, không tạo ZIP. Tài liệu PDF gốc vẫn nằm trong thư viện.
 - Chữ ký là hình vẽ thêm lên tài liệu, không phải chữ ký số có chứng thư. Watermark/chữ ký hiển thị phụ thuộc trang và vị trí được chọn.
 - Ứng dụng xử lý trên thiết bị, không có tài khoản, quảng cáo, analytics hoặc dịch vụ tải tài liệu lên máy chủ. PDF được lưu trong `Documents/Library/<UUID>.pdf`; thông tin thư viện nằm tại `Application Support/library.json` trong sandbox của app. iOS có thể đưa dữ liệu này vào bản sao lưu hệ thống theo cài đặt của bạn.
 - Xóa app có thể xóa tài liệu bên trong. Hãy chia sẻ/xuất các file cần giữ trước khi gỡ app. PDF đã chia sẻ chịu sự quản lý của ứng dụng/dịch vụ mà bạn chọn.
@@ -58,7 +69,13 @@ open ScanPDF.xcodeproj
 bash scripts/build-ios.sh
 ```
 
-Script chọn một iPhone simulator đã cài có iOS 17 trở lên, ưu tiên phiên bản khớp SDK của Xcode đang hoạt động; nếu không có, chọn phiên bản gần nhất thấp hơn SDK. Script chạy XCTest, cài/mở app để kiểm tra khởi chạy và chụp `build/ScanPDF-Simulator.png`, build Release cho thiết bị arm64 bằng `CODE_SIGNING_ALLOWED=NO`, rồi đóng gói `Payload/ScanPDF.app`. File đầu ra gồm `build/ScanPDF-SideStore.ipa`, checksum và kết quả test `.xcresult`. CI giữ ảnh màn hình trong artifact **ScanPDF-Simulator-Preview** để kiểm tra giao diện ban đầu.
+Script kiểm tra logic chọn simulator bằng các Python fixtures trước khi tạo project. Sau đó, script chọn một iPhone simulator đã cài có iOS 17 trở lên, ưu tiên phiên bản khớp SDK của Xcode đang hoạt động; nếu không có, chọn phiên bản gần nhất thấp hơn SDK. Script chạy XCTest, cài/mở app để kiểm tra khởi chạy và chụp `build/ScanPDF-Simulator.png`, build Release cho thiết bị arm64 bằng `CODE_SIGNING_ALLOWED=NO`, rồi đóng gói `Payload/ScanPDF.app`. File đầu ra gồm `build/ScanPDF-SideStore.ipa`, checksum và kết quả test `.xcresult`. CI giữ ảnh màn hình trong artifact **ScanPDF-Simulator-Preview** để kiểm tra giao diện ban đầu.
+
+Có thể chạy riêng các kiểm tra chọn simulator trên macOS hoặc Windows có Python 3:
+
+```sh
+python -m unittest discover -s scripts/tests -v
+```
 
 Windows không có Xcode/iOS SDK, nên không thể biên dịch hoặc kiểm chứng iOS native tại máy Windows. Workflow [Build iOS IPA](.github/workflows/ios.yml) dùng runner macOS để thực hiện build/test. Các GitHub Actions được pin bằng commit SHA; XcodeGen tải về được xác minh SHA-256.
 
@@ -79,6 +96,13 @@ Profile phải cho phép bundle `com.duckk37.scanpdf` và thiết bị cài app.
 
 ## Kiểm tra trên thiết bị thật
 
-Trước khi dùng cho tài liệu quan trọng: quét vài trang, kiểm tra viền/chỉnh phối cảnh; thử nhập từ Tệp/Ảnh; thử gộp, trích xuất, xoay, đổi thứ tự; mở lại bản nén/watermark/chữ ký; khóa/mở bằng mật khẩu; soát kết quả OCR và thử tìm trong PDF có văn bản; chia sẻ/in; đóng mở app để xác nhận thư viện được lưu.
+Trước khi dùng cho tài liệu quan trọng:
+
+- Quét vài trang, kiểm tra viền/chỉnh phối cảnh; thử khổ theo ảnh, A4 và Letter, xác nhận toàn bộ ảnh và lớp OCR nằm đúng trên trang.
+- Thử nhập từ Tệp/Ảnh; gộp, chèn PDF, trích xuất, nhân bản, xoay và đổi thứ tự trang.
+- Xuất vài trang thành PNG và JPEG, mở từng ảnh để kiểm tra nội dung và chia sẻ nhiều file.
+- Mở lại bản nén, bản có watermark, chữ ký và số trang; khóa/mở bằng mật khẩu; soát kết quả OCR và thử tìm trong PDF có văn bản.
+- Đánh dấu yêu thích, đổi cách sắp xếp; đóng mở app để xác nhận thư viện được lưu. Khi cập nhật từ 1.0, giữ app và kiểm tra các tài liệu cũ trước khi thay đổi.
+- Thử chia sẻ và in từ thiết bị.
 
 Các tests tự động kiểm tra xử lý PDF bằng tài liệu được tạo trong bộ nhớ. Camera, quyền truy cập, in và cài/refresh SideStore cần được xác nhận trên thiết bị thật.

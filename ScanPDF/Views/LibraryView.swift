@@ -28,10 +28,24 @@ struct LibraryView: View {
     @State private var cameraDenied = false
     @State private var mergeName = "PDF đã ghép"
     @State private var showMerge = false
+    @AppStorage("librarySort") private var sortValue = LibrarySort.recent.rawValue
+    @AppStorage("libraryFavoritesOnly") private var favoritesOnly = false
+
+    private var sort: LibrarySort { LibrarySort(rawValue: sortValue) ?? .recent }
+    private var sortedDocuments: [LibraryDocument] { store.documents.sorted(by: sort.comesBefore) }
 
     private var filtered: [LibraryDocument] {
-        store.documents.filter { search.isEmpty || $0.name.localizedStandardContains(search) }
-            .sorted { $0.updatedAt > $1.updatedAt }
+        sortedDocuments.filter {
+            (!favoritesOnly || $0.isFavorite) && (search.isEmpty || $0.name.localizedStandardContains(search))
+        }
+    }
+    private var emptyTitle: String {
+        if !search.isEmpty { return "Không tìm thấy tài liệu" }
+        return favoritesOnly ? "Chưa có tài liệu yêu thích" : "Bắt đầu với bản quét đầu tiên"
+    }
+    private var emptyDescription: String {
+        if !search.isEmpty { return favoritesOnly ? "Thử tên khác hoặc tắt bộ lọc yêu thích." : "Thử tìm bằng tên khác." }
+        return favoritesOnly ? "Nhấn giữ tài liệu và chọn Yêu thích. Tắt bộ lọc để xem toàn bộ thư viện." : "Quét tài liệu, nhập ảnh hoặc mở PDF từ Files."
     }
 
     var body: some View {
@@ -51,10 +65,23 @@ struct LibraryView: View {
                             }.font(.subheadline.weight(.semibold))
                         }
                     }
+                    HStack {
+                        Button { favoritesOnly.toggle() } label: {
+                            Label(favoritesOnly ? "Đang xem yêu thích" : "Yêu thích", systemImage: favoritesOnly ? "star.fill" : "star")
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(favoritesOnly ? Theme.teal : .secondary)
+                        Spacer(minLength: 8)
+                        Menu {
+                            Picker("Sắp xếp", selection: $sortValue) {
+                                ForEach(LibrarySort.allCases) { choice in Text(choice.title).tag(choice.rawValue) }
+                            }
+                        } label: { Label(sort.title, systemImage: "arrow.up.arrow.down") }
+                    }.font(.caption.weight(.medium))
                     if filtered.isEmpty {
-                        ContentUnavailableView(search.isEmpty ? "Bắt đầu với bản quét đầu tiên" : "Không tìm thấy tài liệu",
-                            systemImage: search.isEmpty ? "doc.viewfinder" : "magnifyingglass",
-                            description: Text(search.isEmpty ? "Quét tài liệu, nhập ảnh hoặc mở PDF từ Files." : "Thử tìm bằng tên khác."))
+                        ContentUnavailableView(emptyTitle,
+                            systemImage: !search.isEmpty ? "magnifyingglass" : (favoritesOnly ? "star" : "doc.viewfinder"),
+                            description: Text(emptyDescription))
                             .padding(.vertical, 24)
                     } else {
                         LazyVStack(spacing: 12) {
@@ -66,6 +93,9 @@ struct LibraryView: View {
                                 }
                                 .buttonStyle(.plain)
                                 .contextMenu {
+                                    Button {
+                                        do { try store.toggleFavorite(item) } catch { self.error = error.localizedDescription }
+                                    } label: { Label(item.isFavorite ? "Bỏ yêu thích" : "Yêu thích", systemImage: item.isFavorite ? "star.slash" : "star") }
                                     Button { share = SharePayload(items: [store.url(for: item)]) } label: { Label("Chia sẻ PDF", systemImage: "square.and.arrow.up") }
                                     Button { renameItem = item; newName = item.name } label: { Label("Đổi tên", systemImage: "pencil") }
                                     Button(role: .destructive) { deleteItem = item } label: { Label("Xóa tài liệu", systemImage: "trash") }
@@ -147,7 +177,7 @@ struct LibraryView: View {
             .confirmationDialog("Xóa tài liệu khỏi thư viện?", isPresented: Binding(get: { deleteItem != nil }, set: { if !$0 { deleteItem = nil } }), titleVisibility: .visible) {
                 Button("Xóa tài liệu", role: .destructive) {
                     if let item = deleteItem {
-                        do { try store.delete(item) } catch { self.error = error.localizedDescription }
+                        do { try store.delete(item); selection.remove(item.id) } catch { self.error = error.localizedDescription }
                     }
                     deleteItem = nil
                 }
@@ -156,7 +186,7 @@ struct LibraryView: View {
                 TextField("Tên PDF mới", text: $mergeName)
                 Button("Hủy", role: .cancel) {}
                 Button("Ghép") { mergeSelection() }
-            } message: { Text("Các PDF được ghép theo thứ tự hiển thị trong thư viện. PDF có mật khẩu cần được mở khóa trước.") }
+            } message: { Text("Các PDF đã chọn được ghép theo thứ tự sắp xếp của thư viện, kể cả tài liệu bị ẩn bởi bộ lọc. PDF có mật khẩu cần được mở khóa trước.") }
             .alert("Không thể hoàn tất", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
                 Button("Đóng", role: .cancel) { error = nil }
             } message: { Text(error ?? "") }
@@ -271,7 +301,7 @@ struct LibraryView: View {
     }
 
     private func mergeSelection() {
-        let urls = store.documents.sorted { $0.updatedAt > $1.updatedAt }
+        let urls = sortedDocuments
             .filter { selection.contains($0.id) }.map { store.url(for: $0) }
         guard urls.count >= 2 else { error = "Hãy chọn ít nhất hai PDF trong thư viện."; return }
         let name = mergeName
@@ -316,7 +346,10 @@ struct DocumentRow: View {
                 else { Image(systemName: "doc.richtext").font(.title2).foregroundStyle(Theme.teal) }
             }.frame(width: 56, height: 72)
             VStack(alignment: .leading, spacing: 6) {
-                Text(item.name).font(.subheadline.weight(.semibold)).lineLimit(2).foregroundStyle(.primary)
+                HStack(spacing: 5) {
+                    Text(item.name).font(.subheadline.weight(.semibold)).lineLimit(2).foregroundStyle(.primary)
+                    if item.isFavorite { Image(systemName: "star.fill").font(.caption).foregroundStyle(Theme.teal).accessibilityLabel("Yêu thích") }
+                }
                 Text("\(item.pageCount > 0 ? "\(item.pageCount) trang" : "PDF bảo vệ") · \(item.formattedSize)")
                     .font(.caption).foregroundStyle(.secondary)
                 Text(item.updatedAt, format: .dateTime.day().month().year()).font(.caption2).foregroundStyle(.tertiary)
@@ -334,5 +367,29 @@ struct DocumentRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+private enum LibrarySort: String, CaseIterable, Identifiable {
+    case recent, name, size
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .recent: return "Mới sửa nhất"
+        case .name: return "Tên A–Z"
+        case .size: return "Lớn nhất"
+        }
+    }
+    func comesBefore(_ first: LibraryDocument, _ second: LibraryDocument) -> Bool {
+        switch self {
+        case .recent:
+            if first.updatedAt != second.updatedAt { return first.updatedAt > second.updatedAt }
+        case .name:
+            let comparison = first.name.localizedStandardCompare(second.name)
+            if comparison != .orderedSame { return comparison == .orderedAscending }
+        case .size:
+            if first.byteCount != second.byteCount { return first.byteCount > second.byteCount }
+        }
+        return first.id.uuidString < second.id.uuidString
     }
 }

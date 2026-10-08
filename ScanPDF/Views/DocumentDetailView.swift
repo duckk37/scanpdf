@@ -26,6 +26,9 @@ struct DocumentDetailView: View {
     @State private var ocrText = ""
     @State private var confirmRemovePassword = false
     @State private var pendingSheetAction: (() -> Void)?
+    @State private var showImageShare = false
+    @State private var exportedImageURLs: [URL] = []
+    @State private var imageExportDirectory: URL?
 
     private var currentItem: LibraryDocument { store.documents.first { $0.id == item.id } ?? item }
     private var sourceURL: URL { unlockedURL ?? store.url(for: currentItem) }
@@ -87,6 +90,11 @@ struct DocumentDetailView: View {
             action?()
         }) { sheet in sheetContent(sheet) }
         .sheet(isPresented: $showShare) { ActivitySheet(items: [store.url(for: currentItem)]) }
+        .sheet(isPresented: $showImageShare, onDismiss: {
+            if let imageExportDirectory { workingFiles.remove(imageExportDirectory) }
+            imageExportDirectory = nil
+            exportedImageURLs = []
+        }) { ActivitySheet(items: exportedImageURLs.map { $0 as Any }) }
         .fullScreenCover(isPresented: $showFullScreen) {
             if let document { FullScreenPDFView(document: document, name: currentItem.name, currentPage: $currentPage) }
         }
@@ -201,6 +209,10 @@ struct DocumentDetailView: View {
                 tool("Xoay trang", icon: "rotate.right", id: "rotate")
                 tool("Xóa trang", icon: "trash", id: "delete")
                 tool("Sắp xếp", icon: "arrow.up.arrow.down", id: "reorder")
+                tool("Chèn PDF", icon: "doc.badge.plus", id: "insert")
+                tool("Nhân bản", icon: "plus.square.on.square", id: "duplicate")
+                tool("Đánh số", icon: "list.number", id: "numberPages")
+                tool("Xuất ảnh", icon: "photo.on.rectangle", id: "exportImages")
                 tool("Nén PDF", icon: "arrow.down.right.and.arrow.up.left", id: "compress")
                 tool("Watermark", icon: "textformat", id: "watermark")
                 tool("Mật khẩu", icon: "lock", id: "protect")
@@ -285,6 +297,26 @@ struct DocumentDetailView: View {
             OCRTextSheet(text: ocrText, name: currentItem.name)
         case .search:
             if document != nil { PDFSearchSheet(url: sourceURL) { index in currentPage = index } }
+        case .exportImages:
+            if let document {
+                ExportPDFImagesSheet(document: document, initialSelection: selectedPages) { request in
+                    finishSheetThen { exportPDFImages(request) }
+                }
+            }
+        case .insert:
+            InsertPDFSheet(currentPage: currentPage) { request in
+                finishSheetThen { insertPDF(request) }
+            }
+        case .numberPages:
+            if let document {
+                NumberPDFPagesSheet(pageCount: document.pageCount) { position, start in
+                    finishSheetThen {
+                        runPDFOperation(title: "Đang đánh số trang…", outputName: currentItem.name + " - Đánh số") {
+                            try PDFService.numberPages(url: $0, position: position, start: start)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -303,6 +335,10 @@ struct DocumentDetailView: View {
             else { alert = EditorAlert(title: "Không cần gỡ mật khẩu", message: "Tài liệu này đang mở được mà không cần mật khẩu.") }
         case "ocr": recognizeText()
         case "sign": activeSheet = .signature
+        case "duplicate": activeSheet = .pages(.duplicate)
+        case "insert": activeSheet = .insert
+        case "numberPages": activeSheet = .numberPages
+        case "exportImages": activeSheet = .exportImages
         default: break
         }
     }
@@ -394,6 +430,57 @@ struct DocumentDetailView: View {
             runPDFOperation(title: "Đang xoay trang…", overwrite: true) { try PDFService.rotate(url: $0, pages: pages, degrees: degrees) }
         case .delete(let pages):
             runPDFOperation(title: "Đang xóa trang…", overwrite: true) { try PDFService.deletePages(url: $0, pages: pages) }
+        case .duplicate(let pages):
+            runPDFOperation(title: "Đang nhân bản trang…", overwrite: true) { try PDFService.duplicate(url: $0, pages: pages) }
+        }
+    }
+
+    private func insertPDF(_ request: InsertPDFRequest) {
+        do {
+            let importedURL = try workingFiles.makeFileURL()
+            runPDFOperation(title: "Đang chèn PDF…", overwrite: true) { currentURL in
+                defer { try? FileManager.default.removeItem(at: importedURL) }
+                try request.data.write(to: importedURL, options: .atomic)
+                return try PDFService.insert(url: currentURL, from: importedURL, at: request.insertionIndex)
+            }
+        } catch { showError(error) }
+    }
+
+    private func exportPDFImages(_ request: PDFImageExportRequest) {
+        guard document != nil, !isProcessing else { return }
+        isProcessing = true
+        processingTitle = "Đang xuất \(request.pages.count) trang thành ảnh…"
+        let url = sourceURL
+        let name = currentItem.name
+        Task {
+            var directory: URL?
+            do {
+                let destination = try workingFiles.makeExportDirectory()
+                directory = destination
+                let urls = try await Task.detached(priority: .userInitiated) {
+                    let images = try PDFService.exportImages(url: url, pages: request.pages, format: request.format,
+                                                            maxDimension: request.maxDimension, quality: request.quality)
+                    let unsafeCharacters = CharacterSet(charactersIn: "/:\\").union(.newlines).union(.controlCharacters)
+                    let cleanName = String(name.prefix(70)).components(separatedBy: unsafeCharacters).joined(separator: "-")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    let basename = cleanName.isEmpty ? "Tài liệu" : cleanName
+                    return try images.map { image in
+                        let pageNumber = String(format: "%03d", image.pageIndex + 1)
+                        let output = destination.appendingPathComponent("\(basename) - trang-\(pageNumber)")
+                            .appendingPathExtension(request.format.fileExtension)
+                        try image.data.write(to: output, options: .atomic)
+                        return output
+                    }
+                }.value
+                exportedImageURLs = urls
+                imageExportDirectory = destination
+                isProcessing = false
+                showImageShare = true
+            } catch {
+                if let directory { workingFiles.remove(directory) }
+                isProcessing = false
+                showError(error)
+            }
         }
     }
 
@@ -513,6 +600,7 @@ private enum EditorPalette {
 
 private enum EditorSheet: Identifiable, Equatable {
     case password, rename, pages(PDFPageAction), reorder, compress, watermark, protect, signature, ocr, search
+    case exportImages, insert, numberPages
     var id: String {
         switch self {
         case .password: return "password"
@@ -525,6 +613,9 @@ private enum EditorSheet: Identifiable, Equatable {
         case .signature: return "signature"
         case .ocr: return "ocr"
         case .search: return "search"
+        case .exportImages: return "exportImages"
+        case .insert: return "insert"
+        case .numberPages: return "numberPages"
         }
     }
 }
@@ -546,10 +637,20 @@ private final class EditorWorkingFiles: ObservableObject {
         .appendingPathComponent("ScanPDF-Editor-" + UUID().uuidString, isDirectory: true)
 
     func write(_ data: Data) throws -> URL {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let url = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension("pdf")
+        let url = try makeFileURL()
         try data.write(to: url, options: .atomic)
         return url
+    }
+
+    func makeFileURL() throws -> URL {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appendingPathComponent(UUID().uuidString).appendingPathExtension("pdf")
+    }
+
+    func makeExportDirectory() throws -> URL {
+        let destination = directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        return destination
     }
 
     func remove(_ url: URL) { try? FileManager.default.removeItem(at: url) }

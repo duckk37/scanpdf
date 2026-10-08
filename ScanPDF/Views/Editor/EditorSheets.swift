@@ -2,13 +2,14 @@ import PDFKit
 import SwiftUI
 
 enum PDFPageAction: String {
-    case extract, rotate, delete
+    case extract, rotate, delete, duplicate
 
     var title: String {
         switch self {
         case .extract: return "Trích xuất trang"
         case .rotate: return "Xoay trang"
         case .delete: return "Xóa trang"
+        case .duplicate: return "Nhân bản trang"
         }
     }
 }
@@ -17,6 +18,7 @@ enum PageOperationRequest {
     case extract(pages: [Int], name: String)
     case rotate(pages: [Int], degrees: Int)
     case delete(pages: [Int])
+    case duplicate(pages: [Int])
 }
 
 struct PageOperationSheet: View {
@@ -66,6 +68,10 @@ struct PageOperationSheet: View {
                              ? "Cần giữ lại ít nhất một trang trong tài liệu."
                              : "Các trang đã chọn sẽ bị xóa khỏi tài liệu này.")
                             .font(.footnote).foregroundStyle(selection.count == document.pageCount ? Color.red : Color.secondary)
+                    }
+                    if action == .duplicate {
+                        Text("Thêm một bản sao ngay sau mỗi trang đã chọn. Thay đổi được lưu vào tài liệu hiện tại.")
+                            .font(.footnote).foregroundStyle(.secondary)
                     }
                 }.padding(20)
 
@@ -123,6 +129,7 @@ struct PageOperationSheet: View {
         case .extract: onConfirm(.extract(pages: pages, name: outputName.trimmingCharacters(in: .whitespacesAndNewlines)))
         case .rotate: onConfirm(.rotate(pages: pages, degrees: degrees))
         case .delete: onConfirm(.delete(pages: pages))
+        case .duplicate: onConfirm(.duplicate(pages: pages))
         }
     }
 }
