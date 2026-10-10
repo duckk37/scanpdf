@@ -5,6 +5,7 @@ import argparse
 import importlib.metadata
 import json
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -41,6 +42,9 @@ def main() -> None:
     python_license = Path(sys.base_prefix) / "LICENSE.txt"
     if python_license.is_file():
         (args.output / "Python-LICENSE.txt").write_bytes(python_license.read_bytes())
+    # PySide wheels provide the commercial alternative's text but omit the
+    # LGPL/GPL alternatives under which this folder distribution uses Qt.
+    shutil.copytree(Path(__file__).parent / "licenses", args.output / "Qt", dirs_exist_ok=True)
     print(f"Collected notices for {len(inventory)} installed distributions.")
 
 

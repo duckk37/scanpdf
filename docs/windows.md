@@ -17,7 +17,7 @@ Engine [PDFMathTranslate Next](https://github.com/PDFMathTranslate/PDFMathTransl
 
 PDF cần có chữ thật có thể chọn được. Bản scan chỉ có ảnh hoặc ảnh với lớp OCR ẩn chưa được hỗ trợ dịch giữ bố cục. Hãy dùng PDF văn bản gốc khi có; chức năng OCR iOS vẫn hữu ích để tìm kiếm/trích văn bản nhưng không biến bản scan thành PDF có bố cục chữ thật.
 
-Lần dịch đầu cần Internet để tải model nhận diện và font vào `%USERPROFILE%\.cache\babeldoc` theo cơ chế upstream. Model DocLayout khoảng 75 MB, model RapidOCR khoảng 4.7 MB, bộ font khoảng 266 MB; cộng tokenizer và dữ liệu phụ, nên dự trù khoảng 350 MB tải thêm. Những file này được tái sử dụng và upstream kiểm tra hash. Không đóng gói model/font trong ZIP. Dịch qua Google/Bing/API vẫn cần mạng tới nhà cung cấp sau khi có cache.
+Lần dịch đầu cần Internet để tải model nhận diện và font vào `%USERPROFILE%\.cache\babeldoc` theo cơ chế upstream. Model DocLayout khoảng 75 MB, model RapidOCR khoảng 4.7 MB, bộ font khoảng 266 MB; cộng tokenizer và dữ liệu phụ, nên dự trù khoảng 350 MB tải thêm. Những file này được tái sử dụng và upstream kiểm tra hash. Cache BabelDOC không có sẵn trong ZIP; thư viện RapidOCR có kèm các model OCR mặc định nhỏ hơn. Dịch qua Google/Bing/API vẫn cần mạng tới nhà cung cấp sau khi có cache.
 
 Ứng dụng xử lý từng tác vụ dịch để hạn chế RAM. Mỗi PDF tối đa 100 MB và 500 trang; tối đa 8 tác vụ đang chờ. Muốn dịch một phần tài liệu, dùng **Tách trang** tạo PDF nhỏ trước (backend API cũng nhận dải trang `1,3-5`; giao diện dịch hiện gửi toàn bộ PDF). Công việc/lỗi và tiến trình được hiển thị trong app; có thể hủy tác vụ đang chạy. File tác vụ tạm của phiên làm việc được dọn khi đóng app; phần còn sót do lỗi được dọn khi mở lại nếu đã quá 24 giờ. PDF đã nhập vào thư viện vẫn được giữ.
 
@@ -50,4 +50,4 @@ Output nằm ở `desktop/dist/`. Có thể chạy source bằng `desktop/.venv/
 
 Workflow [Build Windows desktop](../.github/workflows/windows.yml) dùng Windows runner x64, kiểm thử EXE rồi tải ZIP lên Release. Workflow iOS chạy riêng trên macOS; hai workflow dùng cùng nhóm publish để giữ asset của cả hai nền tảng. Tag `v*` tạo release riêng, nhánh `main` cập nhật `latest`.
 
-Giấy phép và nguồn thư viện: [THIRD_PARTY_NOTICES.md](../desktop/THIRD_PARTY_NOTICES.md). Windows app dùng AGPL-3.0 hoặc mới hơn; ZIP nguồn cung cấp mã build và các nguồn upstream có giấy phép AGPL/GPL. Không có model tải sẵn hoặc API key trong gói phát hành.
+Giấy phép và nguồn thư viện: [THIRD_PARTY_NOTICES.md](../desktop/THIRD_PARTY_NOTICES.md). Windows app dùng AGPL-3.0 hoặc mới hơn; ZIP nguồn cung cấp mã build và các nguồn upstream có giấy phép AGPL/GPL. Không có cache model/font BabelDOC tải trước hoặc API key trong gói phát hành.

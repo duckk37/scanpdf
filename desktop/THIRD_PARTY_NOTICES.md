@@ -15,9 +15,9 @@ The translation and PDF libraries are unmodified upstream releases. Their exact 
 | Levenshtein / python-Levenshtein | Pinned in requirements.txt | GPL-2.0-or-later, [source](https://github.com/rapidfuzz/Levenshtein) |
 | PyInstaller bootloader | 6.22.3 | GPL-2.0-or-later with the bootloader exception, [license](https://pyinstaller.org/en/stable/license.html) |
 
-Qt is dynamically linked in the folder distribution. Users may replace the Qt/PySide libraries with compatible modified builds and debug those modifications. No restriction against reverse engineering those library modifications is imposed by ScanPDF. Keep the complete EXE folder; do not move only the executable. Exact upstream source versions and build instructions are available through the Qt links above.
+Qt is dynamically linked in the folder distribution. Its LGPL-3.0 and GPL-3.0 license texts are supplied under `_internal/licenses/Qt/`. Users may replace the Qt/PySide libraries with compatible modified builds and debug those modifications. No restriction against reverse engineering those library modifications is imposed by ScanPDF. Keep the complete EXE folder; do not move only the executable. Exact upstream source versions and build instructions are available through the Qt links above.
 
-Layout/OCR models and fonts are downloaded at runtime by BabelDOC rather than redistributed inside the application ZIP. Their original notices remain applicable:
+BabelDOC's layout model and font cache are downloaded at runtime. The RapidOCR wheel also contains its default OCR models; those are retained in the folder distribution. Their original notices remain applicable:
 
 - [DocLayout ONNX model card](https://huggingface.co/wybxc/DocLayout-YOLO-DocStructBench-onnx) declares Apache-2.0 and identifies its base model. The [DocLayout-YOLO code](https://github.com/opendatalab/DocLayout-YOLO) has its own AGPL-3.0 license.
 - [RapidOCR](https://github.com/RapidAI/RapidOCR) and its Paddle OCR model notices are Apache-2.0.

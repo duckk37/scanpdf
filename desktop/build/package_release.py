@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import subprocess
 import urllib.request
 from pathlib import Path
@@ -86,6 +87,7 @@ def main() -> None:
         "source_has_local_changes": dirty, "architecture": "Windows x64", "signing": "unsigned"}, indent=2) + "\n", encoding="utf-8")
     for source in (DESKTOP / "LICENSE", DESKTOP / "THIRD_PARTY_NOTICES.md", REPO / "docs" / "windows.md"):
         (app / source.name).write_bytes(source.read_bytes())
+    shutil.copytree(DESKTOP / "build" / "licenses", app / "_internal" / "licenses" / "Qt", dirs_exist_ok=True)
     binary_zip = DIST / "ScanPDF-Desktop-Windows-x64.zip"
     with ZipFile(binary_zip, "w", ZIP_DEFLATED, compresslevel=6) as archive:
         for file in sorted(app.rglob("*")):
