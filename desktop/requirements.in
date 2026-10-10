@@ -1,0 +1,19 @@
+# Windows x64, Python 3.12. Complete resolved versions live in requirements.txt.
+PySide6==6.8.3
+keyring==25.7.0
+pdf2zh-next==2.8.2
+# pdf2zh-next 2.8.2 requires BabelDOC <0.6 and PyMuPDF <1.25.3.
+babeldoc==0.5.20
+PyMuPDF==1.25.2
+# Upstream's newer Tencent SDK releases removed the TextTranslate endpoint.
+tencentcloud-sdk-python-tmt==3.1.70
+# Keep the 2025 engine on the API families against which it was released.
+peewee>=3.17.8,<4
+openai>=1.59.3,<2
+huggingface-hub>=0.27,<1
+numpy>=2.0.2,<2.3
+onnx>=1.18,<1.19
+onnxruntime>=1.16.1,<1.23
+# RapidOCR also requires opencv-python; lock matching native ABI versions.
+opencv-python==4.11.0.86
+opencv-python-headless==4.11.0.86

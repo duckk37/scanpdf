@@ -25,6 +25,7 @@ struct ToolsView: View {
         .init(id: "watermark", title: "Watermark", subtitle: "Thêm chữ lên tài liệu", icon: "textformat"),
         .init(id: "sign", title: "Chữ ký", subtitle: "Vẽ và chèn chữ ký", icon: "signature"),
         .init(id: "ocr", title: "Nhận dạng chữ", subtitle: "Trích văn bản bằng OCR", icon: "text.viewfinder"),
+        .init(id: "translate", title: "Dịch sang tiếng Việt", subtitle: "Kết nối ScanPDF PC qua Wi-Fi", icon: "character.bubble"),
         .init(id: "protect", title: "Đặt mật khẩu", subtitle: "Tạo bản PDF được bảo vệ", icon: "lock"),
         .init(id: "unlock", title: "Gỡ mật khẩu", subtitle: "Cần mật khẩu hiện tại", icon: "lock.open")
     ]
@@ -35,7 +36,7 @@ struct ToolsView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Một nơi cho mọi PDF.").font(.title2.bold())
-                        Text("Tạo mới, chỉnh sửa và chia sẻ ngay trên thiết bị.").font(.subheadline).foregroundStyle(.secondary)
+                        Text("Quét và chỉnh PDF trên thiết bị. Dịch sang tiếng Việt qua ScanPDF PC.").font(.subheadline).foregroundStyle(.secondary)
                     }
                     Text("TẠO TÀI LIỆU").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {

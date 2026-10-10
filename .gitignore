@@ -4,7 +4,7 @@ ScanPDF.xcodeproj/
 xcuserdata/
 *.xcuserstate
 DerivedData/
-build/
+/build/
 *.ipa
 *.xcarchive
 *.xcresult
@@ -14,3 +14,12 @@ build/
 *.mobileprovision
 *.keychain-db
 __pycache__/
+.pytest_cache/
+desktop/.venv/
+desktop/dist/
+desktop/.build/
+desktop/.cache/
+desktop/.build-resolve.json
+desktop/.build-*.json
+desktop/.build-*.txt
+output/pdf/

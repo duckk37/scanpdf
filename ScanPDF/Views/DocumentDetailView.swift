@@ -218,6 +218,7 @@ struct DocumentDetailView: View {
                 tool("Mật khẩu", icon: "lock", id: "protect")
                 if sourceWasLocked { tool("Gỡ mật khẩu", icon: "lock.open", id: "unlock") }
                 tool("Đọc chữ OCR", icon: "text.viewfinder", id: "ocr")
+                tool("Dịch sang Việt", icon: "character.bubble", id: "translate")
                 tool("Chữ ký", icon: "signature", id: "sign")
             }
         }.disabled(isProcessing || isLoading)
@@ -317,6 +318,16 @@ struct DocumentDetailView: View {
                     }
                 }
             }
+        case .translate:
+            if let document {
+                TranslatePDFSheet(sourceURL: sourceURL, name: currentItem.name, pageCount: document.pageCount,
+                                  preservesPassword: protectionPassword != nil) { data, kind in
+                    finishSheetThen {
+                        let suffix = kind == .mono ? " - Tiếng Việt" : " - Song ngữ Việt"
+                        runDataOperation(title: "Đang lưu bản dịch…", outputName: currentItem.name + suffix) { _ in data }
+                    }
+                }
+            }
         }
     }
 
@@ -339,6 +350,7 @@ struct DocumentDetailView: View {
         case "insert": activeSheet = .insert
         case "numberPages": activeSheet = .numberPages
         case "exportImages": activeSheet = .exportImages
+        case "translate": activeSheet = .translate
         default: break
         }
     }
@@ -600,7 +612,7 @@ private enum EditorPalette {
 
 private enum EditorSheet: Identifiable, Equatable {
     case password, rename, pages(PDFPageAction), reorder, compress, watermark, protect, signature, ocr, search
-    case exportImages, insert, numberPages
+    case exportImages, insert, numberPages, translate
     var id: String {
         switch self {
         case .password: return "password"
@@ -616,6 +628,7 @@ private enum EditorSheet: Identifiable, Equatable {
         case .exportImages: return "exportImages"
         case .insert: return "insert"
         case .numberPages: return "numberPages"
+        case .translate: return "translate"
         }
     }
 }

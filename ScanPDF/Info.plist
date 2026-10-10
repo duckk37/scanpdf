@@ -26,6 +26,24 @@
     <string>ScanPDF cần camera để quét tài liệu thành PDF trên thiết bị của bạn.</string>
     <key>NSPhotoLibraryAddUsageDescription</key>
     <string>ScanPDF lưu các trang PDF thành ảnh khi bạn chọn Lưu ảnh.</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>ScanPDF kết nối PC cùng mạng Wi-Fi để dịch PDF sang tiếng Việt và tải bản dịch về thư viện.</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+        <key>NSExceptionDomains</key>
+        <dict>
+            <key>10.0.0.0/8</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>
+            <key>172.16.0.0/12</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>
+            <key>192.168.0.0/16</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>
+            <key>169.254.0.0/16</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>
+            <key>127.0.0.0/8</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>
+            <key>::1</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>
+            <key>fc00::/7</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>
+            <key>fe80::/10</key><dict><key>NSExceptionAllowsInsecureHTTPLoads</key><true/></dict>
+        </dict>
+    </dict>
     <key>UILaunchScreen</key>
     <dict/>
     <key>UIApplicationSceneManifest</key>

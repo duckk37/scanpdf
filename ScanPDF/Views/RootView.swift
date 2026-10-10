@@ -40,14 +40,23 @@ struct AboutView: View {
                             Text("Quét gọn. Lưu trọn.").foregroundStyle(.secondary)
                         }
                     }.padding(.vertical, 14)
-                    LabeledContent("Phiên bản", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.1.0")
+                    LabeledContent("Phiên bản", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.0")
                     LabeledContent("Tài liệu", value: "\(store.documents.count)")
                     LabeledContent("Dung lượng", value: ByteCountFormatter.string(fromByteCount: store.documents.reduce(0) { $0 + $1.byteCount }, countStyle: .file))
                 }
                 Section("Tài liệu của bạn") {
                     Label("Quét và xử lý trực tiếp trên thiết bị", systemImage: "iphone")
-                    Label("Không cần tài khoản hoặc máy chủ", systemImage: "lock.shield")
+                    Label("Thư viện PDF lưu trên thiết bị", systemImage: "lock.shield")
                     Text("Thư viện nằm trong dữ liệu của app. Hãy chia sẻ các PDF quan trọng sang Files để có bản sao trước khi gỡ app.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                Section("Dịch PDF sang tiếng Việt") {
+                    NavigationLink {
+                        TranslationSettingsView()
+                    } label: { Label("Kết nối ScanPDF PC", systemImage: "desktopcomputer") }
+                    Text("Dịch PDF cần PC bật máy chủ và cùng Wi-Fi. Công cụ dịch, mô hình và dịch vụ được cấu hình trên PC. Bản dịch được lưu thành tài liệu mới; hãy kiểm tra bố cục, công thức và nội dung sau khi dịch.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Text("Dịch giữ bố cục hiện dành cho PDF gốc có văn bản. PDF scan và ảnh toàn trang có lớp OCR ẩn chưa được hỗ trợ.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("Những điều cần biết") {
