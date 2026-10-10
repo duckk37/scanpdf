@@ -22,7 +22,7 @@ def create_app(manager: JobManager, token: str) -> FastAPI:
         raise ValueError("Mã ghép nối cần ít nhất 24 ký tự ngẫu nhiên.")
 
     async def authenticate(x_pair_token: str | None = Header(default=None)):
-        if x_pair_token is None or not secrets.compare_digest(x_pair_token, token):
+        if x_pair_token is None or not secrets.compare_digest(x_pair_token.encode("utf-8"), token.encode("utf-8")):
             raise HTTPException(401, "Mã ghép nối không đúng.")
 
     app = FastAPI(title="ScanPDF LAN Bridge", docs_url=None, redoc_url=None,

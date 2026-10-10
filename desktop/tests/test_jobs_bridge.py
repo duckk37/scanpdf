@@ -61,6 +61,7 @@ def test_auth_raw_upload_idempotency_poll_download_and_conflict(tmp_path):
         client = TestClient(create_app(manager, token))
         assert client.get("/health").status_code == 401
         assert client.get("/health", headers={"X-Pair-Token": "wrong"}).status_code == 401
+        assert client.get("/health", headers=[(b"X-Pair-Token", b"wrong-\xe9-token")]).status_code == 401
         headers = {"X-Pair-Token": token}
         health = client.get("/health", headers=headers).json()
         assert health["protocol_version"] == 1 and not health["scan_translation"]

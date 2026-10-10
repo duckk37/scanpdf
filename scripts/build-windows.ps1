@@ -17,14 +17,14 @@ function Invoke-Python {
 }
 
 function Test-FrozenApp {
-    param([string]$Executable, [string[]]$Arguments)
+    param([string]$Executable, [string[]]$Arguments, [int]$TimeoutSeconds = 180)
     $Process = Start-Process -FilePath $Executable -ArgumentList $Arguments -PassThru -WindowStyle Hidden
-    if (-not $Process.WaitForExit(240000)) {
+    if (-not $Process.WaitForExit($TimeoutSeconds * 1000)) {
         # A missing frozen import can show a native error dialog on Windows.
         # Bound the smoke check instead of waiting indefinitely for that dialog.
         $Process.Kill($true)
         $Process.WaitForExit()
-        throw "Packaged application did not finish its verification within four minutes."
+        throw "Packaged application did not finish its verification within $TimeoutSeconds seconds."
     }
     if ($Process.ExitCode -ne 0) { throw "Packaged application failed with exit code $($Process.ExitCode)" }
 }
@@ -54,7 +54,7 @@ try {
     Test-FrozenApp -Executable $Executable -Arguments @("--self-test")
     $Screenshot = Join-Path $RepoRoot "desktop\dist\ScanPDF-Desktop-Preview.png"
     $ScreenshotData = Join-Path $RepoRoot "desktop\.build\preview-data"
-    Test-FrozenApp -Executable $Executable -Arguments @("--screenshot", "`"$Screenshot`"", "--data-dir", "`"$ScreenshotData`"")
+    Test-FrozenApp -Executable $Executable -Arguments @("--screenshot", "`"$Screenshot`"", "--data-dir", "`"$ScreenshotData`"") -TimeoutSeconds 30
     if (-not (Test-Path -LiteralPath $Screenshot)) { throw "GUI verification did not create a screenshot." }
     Invoke-Python -Arguments @("desktop/build/package_release.py")
 } finally {

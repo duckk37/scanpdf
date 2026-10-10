@@ -18,7 +18,7 @@ hiddenimports = [
 
 # Config models and translators are selected dynamically and are also pickled
 # into BabelDOC's spawned worker. Do not pull upstream's unused Gradio UI.
-for package in ("babeldoc", "pdf2zh_next", "rapidocr_onnxruntime", "tiktoken_ext"):
+for package in ("babeldoc", "pdf2zh_next", "rapidocr_onnxruntime", "tiktoken_ext", "bitstring"):
     hiddenimports += collect_submodules(
         package,
         filter=lambda module: module not in ("pdf2zh_next.i18n", "pdf2zh_next.main") and not any(

@@ -70,11 +70,18 @@ def main() -> None:
     app = DIST / "ScanPDF-Desktop"
     if not (app / "ScanPDF-Desktop.exe").is_file():
         raise SystemExit("The tested EXE folder is missing.")
-    revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO,
-                              capture_output=True, text=True, check=True).stdout.strip()
-    dirty = bool(subprocess.run(["git", "status", "--porcelain", "--", "desktop", "scripts/build-windows.ps1",
-                                ".github/workflows/windows.yml", "docs", "README.md"], cwd=REPO,
-                               capture_output=True, text=True, check=True).stdout.strip())
+    try:
+        revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO,
+                                 capture_output=True, text=True, check=True).stdout.strip()
+        dirty = bool(subprocess.run(["git", "status", "--porcelain", "--", "desktop", "scripts/build-windows.ps1",
+                                    ".github/workflows/windows.yml", "docs", "README.md"], cwd=REPO,
+                                   capture_output=True, text=True, check=True).stdout.strip())
+    except (OSError, subprocess.CalledProcessError):
+        # The downloadable corresponding-source ZIP deliberately has no .git.
+        source_manifest = REPO / "SOURCE_MANIFEST.json"
+        revision = (json.loads(source_manifest.read_text(encoding="utf-8")).get("source_revision")
+                    if source_manifest.is_file() else "unversioned-source")
+        dirty = None  # Local modifications cannot be determined without Git.
     (app / "BUILD.json").write_text(json.dumps({"version": "1.2.0", "source_revision": revision,
         "source_has_local_changes": dirty, "architecture": "Windows x64", "signing": "unsigned"}, indent=2) + "\n", encoding="utf-8")
     for source in (DESKTOP / "LICENSE", DESKTOP / "THIRD_PARTY_NOTICES.md", REPO / "docs" / "windows.md"):
