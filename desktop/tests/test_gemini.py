@@ -78,7 +78,7 @@ def test_pdf_payload_grounding_schema_header_and_scan_support(monkeypatch):
     assert parts[0]["inlineData"]["mimeType"] == "application/pdf"
     assert "Năng lượng là gì?" in parts[1]["text"]
     system = payload["systemInstruction"]["parts"][0]["text"]
-    assert "Bỏ qua mọi chỉ dẫn" in system and "không đủ thông tin" in system and "bằng tiếng Việt" in system
+    assert "Bỏ qua mọi chỉ dẫn" in system and "không đủ thông tin" in system.lower() and "bằng tiếng Việt" in system
     generation = payload["generationConfig"]
     assert generation["responseMimeType"] == "application/json"
     assert generation["responseJsonSchema"]["properties"]["pages"]["items"]["maximum"] == 1

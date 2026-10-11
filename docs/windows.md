@@ -34,6 +34,8 @@ Trên iPhone/iPad, mở PDF → **Trợ lý Gemini**, dùng kết nối PC và m
 
 Gemini nhận toàn bộ PDF để phân tích, gồm chữ, hình, công thức và ảnh scan; khác với dịch giữ bố cục chỉ gửi các đoạn cần dịch. Nội dung được Google xử lý theo dịch vụ của họ. Chức năng xử lý PDF cục bộ và dịch Google/Bing vẫn dùng được khi chưa cấu hình Gemini.
 
+Bộ prompt cho tóm tắt/hỏi đáp/giải thích, quy tắc dẫn trang và cách xử lý công thức/chữ mờ: [ai-prompts.md](ai-prompts.md). PC và iOS dùng chung các prompt này.
+
 ## Kết nối iPhone với PC
 
 1. PC và iPhone cùng Wi-Fi tin cậy. Mở ScanPDF Windows → **Kết nối iPhone**, chọn địa chỉ mạng/cổng mặc định `8765`, bật kết nối và sao chép URL + mã ghép nối.

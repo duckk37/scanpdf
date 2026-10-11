@@ -11,6 +11,8 @@
 
 Gemini cần API key riêng, nhập và lưu trên **ScanPDF PC → Dịch tiếng Việt → Gemini**; key lưu trong Windows Credential Manager, có nút xóa key. iPhone dùng cùng kết nối PC qua Wi-Fi, không cần nhập API key. Hạn mức và chi phí theo tài khoản Gemini API; xem [hướng dẫn API key của Google](https://ai.google.dev/gemini-api/docs/api-key). Câu trả lời AI và trang được đề xuất cần đối chiếu với PDF gốc.
 
+Bộ prompt dùng chung cho trợ lý: [tóm tắt, hỏi đáp và giải thích PDF](docs/ai-prompts.md), gồm cách dẫn trang, giữ công thức/đơn vị và xử lý nội dung không đọc rõ.
+
 ## Thay đổi trong 1.2.0
 
 - Thêm ScanPDF cho Windows: thư viện, xem PDF, xử lý trang, xuất ảnh, nén, watermark, số trang và mật khẩu; tạo PDF từ ảnh hoặc webcam.

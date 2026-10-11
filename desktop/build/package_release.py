@@ -85,7 +85,8 @@ def main() -> None:
         dirty = None  # Local modifications cannot be determined without Git.
     (app / "BUILD.json").write_text(json.dumps({"version": "1.3.0", "source_revision": revision,
         "source_has_local_changes": dirty, "architecture": "Windows x64", "signing": "unsigned"}, indent=2) + "\n", encoding="utf-8")
-    for source in (DESKTOP / "LICENSE", DESKTOP / "THIRD_PARTY_NOTICES.md", REPO / "docs" / "windows.md"):
+    for source in (DESKTOP / "LICENSE", DESKTOP / "THIRD_PARTY_NOTICES.md", REPO / "docs" / "windows.md",
+                   REPO / "docs" / "ai-prompts.md"):
         (app / source.name).write_bytes(source.read_bytes())
     shutil.copytree(DESKTOP / "build" / "licenses", app / "_internal" / "licenses" / "Qt", dirs_exist_ok=True)
     binary_zip = DIST / "ScanPDF-Desktop-Windows-x64.zip"
@@ -103,7 +104,7 @@ def main() -> None:
             if file.is_file() and not file.name.startswith(".build-") and not any(part in excluded for part in file.relative_to(DESKTOP).parts):
                 archive.write(file, "ScanPDF-Desktop-Source/desktop/" + str(file.relative_to(DESKTOP)).replace("\\", "/"))
         for source in (REPO / "scripts" / "build-windows.ps1", REPO / ".github" / "workflows" / "windows.yml",
-                       REPO / "docs" / "windows.md", REPO / "README.md"):
+                       REPO / "docs" / "windows.md", REPO / "docs" / "ai-prompts.md", REPO / "README.md"):
             archive.write(source, "ScanPDF-Desktop-Source/" + str(source.relative_to(REPO)).replace("\\", "/"))
         for file in upstream:
             archive.write(file, "ScanPDF-Desktop-Source/upstream/" + file.name)
