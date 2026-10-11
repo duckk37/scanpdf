@@ -74,10 +74,11 @@ def test_gemini_configuration_consent_and_async_answer_preserve_pdf(application,
     errors, calls = [], []
     monkeypatch.setattr(window, "message", lambda text, error=False: errors.append(text))
     item = window.import_pdf(source)
-    window.gemini_key.setText("fake-test-key")
+    fake_key = "fake.test-key"
+    window.gemini_key.setText(fake_key)
     assert window.save_gemini_settings() is not None
-    assert saved["gemini-api-key"] == "fake-test-key"
-    assert "fake-test-key" not in window.preferences_file.read_text()
+    assert saved["gemini-api-key"] == fake_key
+    assert fake_key not in window.preferences_file.read_text()
     assert window.manager.default_settings.service == "google"
     window.navigate(4)
     window.assistant_mode.setCurrentIndex(window.assistant_mode.findData("question"))

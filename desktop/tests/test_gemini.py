@@ -56,6 +56,35 @@ def configured():
     return GeminiAssistant(GeminiSettings(api_key="PRIVATE-KEY"))
 
 
+def test_opaque_punctuated_key_retained_in_header_and_translation_config(tmp_path, monkeypatch):
+    import scanpdf.services.gemini as service
+    fake_key = "FAKE.not-a-real-key_base64+/="
+    calls = []
+    def post(url, **options):
+        calls.append((url, options))
+        return FakeResponse(completed_answer())
+    monkeypatch.setattr(service.requests, "post", post)
+    settings = GeminiSettings(api_key=fake_key).validate()
+    assert fake_key not in repr(settings)
+    assert GeminiAssistant(settings).analyze_bytes(pdf_bytes())["pages"] == [1]
+    url, options = calls[0]
+    assert fake_key not in url
+    assert options["headers"]["x-goog-api-key"] == fake_key
+    translation = TranslationSettings(service="gemini", api_key=fake_key).validate()
+    upstream = _prepare_gemini_settings(_upstream_settings(translation, tmp_path))
+    assert upstream.translate_engine_settings.openai_api_key == fake_key
+
+
+@pytest.mark.parametrize("key", [None, "", "x" * 4097, "key space", "key\tvalue", "key\r\nheader", "key\x00", "key\x1f", "key\x7f", "keyé"])
+def test_key_unsafe_for_http_header_rejected_before_network(monkeypatch, key):
+    import scanpdf.services.gemini as service
+    def forbidden(*args, **kwargs):
+        pytest.fail("Unsafe credential must not be sent")
+    monkeypatch.setattr(service.requests, "post", forbidden)
+    with pytest.raises(GeminiError):
+        GeminiAssistant(GeminiSettings(api_key=key))
+
+
 def test_pdf_payload_grounding_schema_header_and_scan_support(monkeypatch):
     import scanpdf.services.gemini as service
     calls = []

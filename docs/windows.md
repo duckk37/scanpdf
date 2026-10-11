@@ -28,6 +28,8 @@ Lần dịch đầu cần Internet để tải model nhận diện và font vào
 3. Vào **Trợ lý Gemini**, chọn PDF và tóm tắt/hỏi đáp/giải thích, chọn cho phép gửi PDF tới Google, rồi nhấn phân tích. PDF scan cũng dùng được cho trợ lý. PDF bảo vệ cần mật khẩu đúng; bản gửi được mở khóa trong bộ nhớ và bản gốc vẫn giữ nguyên.
 4. Đọc kết quả và các trang Gemini đề xuất; mở bản gốc để kiểm tra. Sao chép hoặc xuất TXT khi cần. Trợ lý không chỉnh sửa PDF hay tự thực thi chỉ dẫn bên trong tài liệu.
 
+Từ bản 1.3.1, ô Gemini API key nhận cả key có dấu chấm/dấu câu; không kiểm tra tiền tố hoặc đổi nội dung key. Việc lưu key chỉ kiểm tra định dạng an toàn, không gọi API. Nếu gặp lỗi khi phân tích/dịch, kiểm tra quyền truy cập, hạn mức và model trên tài khoản Google. Không gửi key qua chat hoặc ghi vào Git; nếu key đã bị lộ, thay key trong [Google AI Studio](https://aistudio.google.com/apikey).
+
 Giới hạn mỗi yêu cầu: PDF 10 MB, 60 trang; câu hỏi 3000 ký tự. PC xử lý một yêu cầu trợ lý tại một thời điểm. Có thể ngừng chờ; yêu cầu đã gửi có thể vẫn được Google xử lý. App không tự gửi lại yêu cầu trợ lý khi lỗi/mất kết nối. Mạng, quota, API key và quyền dùng model phụ thuộc tài khoản của bạn; không có key dùng chung được đóng gói.
 
 Trên iPhone/iPad, mở PDF → **Trợ lý Gemini**, dùng kết nối PC và mã ghép nối đã có. **Lưu Gemini** trên PC để trợ lý sẵn sàng ngay cả khi dịch PDF đang chọn Google/Bing. Nhấn **Xóa API key** trên PC để ngừng dùng key cho yêu cầu mới; yêu cầu đã gửi có thể tiếp tục.

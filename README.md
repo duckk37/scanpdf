@@ -1,6 +1,11 @@
 # ScanPDF
 
-Ứng dụng quét tài liệu, xử lý PDF và dịch PDF sang tiếng Việt cho **iPhone/iPad iOS 17+** và **Windows x64**. Phiên bản mã nguồn hiện tại: **1.3.0**. App iOS dùng SwiftUI, PDFKit, Vision, VisionKit và PhotosUI của Apple. App Windows dùng PySide6, PyMuPDF và engine PDFMathTranslate Next/BabelDOC.
+Ứng dụng quét tài liệu, xử lý PDF và dịch PDF sang tiếng Việt cho **iPhone/iPad iOS 17+** và **Windows x64**. Phiên bản mã nguồn hiện tại: **1.3.1**. App iOS dùng SwiftUI, PDFKit, Vision, VisionKit và PhotosUI của Apple. App Windows dùng PySide6, PyMuPDF và engine PDFMathTranslate Next/BabelDOC.
+
+## Thay đổi trong 1.3.1
+
+- Sửa lỗi không lưu được Gemini API key có dấu chấm hoặc dấu câu. Key được giữ nguyên trong Credential Manager và khi gửi tới Google; kiểm tra cục bộ chỉ chặn ký tự không an toàn cho HTTP và độ dài vượt giới hạn.
+- Định dạng key được chấp nhận không có nghĩa key đã được Google xác nhận quyền truy cập. Google kiểm tra key/hạn mức/model khi người dùng chủ động gửi yêu cầu; ứng dụng không tự gọi API lúc lưu key.
 
 ## Thay đổi trong 1.3.0
 

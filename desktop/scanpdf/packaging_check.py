@@ -75,7 +75,7 @@ def _check_child(connection) -> None:
         _verify_pdf_search()
         with tempfile.TemporaryDirectory(prefix="scanpdf-worker-check-") as directory:
             configuration = _upstream_settings(TranslationSettings(source="en"), Path(directory))
-            fake_key = "scanpdf-offline-test-key-not-a-real-credential"
+            fake_key = "scanpdf-offline-test.key-not-a-real-credential"
             gemini_settings = GeminiSettings(api_key=fake_key).validate()
             assistant = GeminiAssistant(gemini_settings)
             if not assistant.configured or assistant.settings.model != gemini_settings.model:

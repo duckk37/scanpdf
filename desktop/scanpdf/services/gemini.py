@@ -39,8 +39,11 @@ class GeminiSettings:
     def validate(self) -> "GeminiSettings":
         if not isinstance(self.model, str) or not re.fullmatch(r"gemini-[A-Za-z0-9][A-Za-z0-9._-]{0,119}", self.model):
             raise GeminiError("Tên model Gemini không hợp lệ. Dùng tên bắt đầu bằng gemini-.")
-        if not isinstance(self.api_key, str) or not self.api_key or len(self.api_key) > 4096 or not re.fullmatch(r"[A-Za-z0-9_-]+", self.api_key):
-            raise GeminiError("Nhập API key Gemini hợp lệ trong cài đặt trên PC.")
+        # Credentials are opaque: Google may issue keys with punctuation.
+        # Reject whitespace/control characters unsafe for HTTP headers, but
+        # leave actual key validity and permissions to the provider.
+        if not isinstance(self.api_key, str) or not self.api_key or len(self.api_key) > 4096 or not re.fullmatch(r"[\x21-\x7e]+", self.api_key):
+            raise GeminiError("Nhập API key Gemini trong cài đặt trên PC. Key không được chứa khoảng trắng, xuống dòng hoặc ký tự điều khiển.")
         return self
 
 
@@ -194,7 +197,7 @@ class GeminiAssistant:
                 try:
                     if response.status_code != 200:
                         messages = {
-                            400: "Gemini không chấp nhận yêu cầu. Kiểm tra model và tệp PDF.",
+                            400: "Gemini không chấp nhận yêu cầu. Kiểm tra API key, model và tệp PDF.",
                             401: "API key Gemini không hợp lệ.",
                             403: "API key Gemini chưa có quyền truy cập model đã chọn.",
                             404: "Không tìm thấy model Gemini đã chọn. Kiểm tra tên model.",
