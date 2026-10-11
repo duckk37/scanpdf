@@ -129,6 +129,56 @@ def _upstream_settings(settings: TranslationSettings, output: Path):
     })
 
 
+def _install_pdf_space_mapping_fix() -> None:
+    """Retain explicit space mappings discarded by BabelDOC's outline filter.
+
+    BabelDOC 0.5.20 reproduce_cmap selects its generated TrueType resources.
+    Its reproduce_one_font omits glyphs with no contours, including SPACE.
+    Preserve only an existing, authoritative CID -> U+0020 entry; never infer
+    mappings from glyph indices or replace page text/drawing operators.
+    """
+    from babeldoc.format.pdf.document_il.backend import pdf_creater
+
+    original = getattr(pdf_creater, "reproduce_one_font", None)
+    if getattr(original, "_scanpdf_preserves_spaces", False):
+        return
+    if not callable(original) or not callable(getattr(pdf_creater, "parse_tounicode_cmap", None)):
+        raise RuntimeError("Phiên bản engine không tương thích với xử lý khoảng trắng PDF.")
+
+    def preserve_spaces(document, font_xref):
+        unicode_kind, unicode_reference = document.xref_get_key(font_xref, "ToUnicode")
+        encoding_kind, encoding = document.xref_get_key(font_xref, "Encoding")
+        cmap_xref = None
+        spaces = {}
+        if unicode_kind == "xref" and encoding_kind == "name" and encoding == "/Identity-H":
+            cmap_xref = int(unicode_reference.split()[0])
+            before = pdf_creater.parse_tounicode_cmap(document.xref_stream(cmap_xref))
+            spaces = {cid: value for cid, value in before.items() if value == 0x20 and 0 <= cid <= 0xFFFF}
+        result = original(document, font_xref)
+        if spaces:
+            stream = document.xref_stream(cmap_xref)
+            after = pdf_creater.parse_tounicode_cmap(stream)
+            missing = sorted(cid for cid in spaces if cid not in after)
+            if missing:
+                ending = re.search(rb"(?m)^\s*endcmap\s*$", stream)
+                if ending is None:
+                    raise RuntimeError("Engine tạo bảng mã font không hợp lệ; không thể giữ khoảng trắng PDF.")
+                # A separate bfchar block avoids changing existing maps/counts.
+                blocks = []
+                for start in range(0, len(missing), 100):
+                    block = missing[start:start + 100]
+                    blocks.append(f"{len(block)} beginbfchar\n" +
+                                  "\n".join(f"<{cid:04x}><0020>" for cid in block) +
+                                  "\nendbfchar\n")
+                mappings = "".join(blocks).encode("ascii")
+                document.update_stream(cmap_xref, stream[:ending.start()] + mappings + stream[ending.start():])
+        return result
+
+    preserve_spaces._scanpdf_preserves_spaces = True
+    preserve_spaces._scanpdf_original = original
+    pdf_creater.reproduce_one_font = preserve_spaces
+
+
 def _engine_worker(input_path: str, output_dir: str, raw_settings: dict, connection) -> None:
     import asyncio
     import logging
@@ -138,6 +188,8 @@ def _engine_worker(input_path: str, output_dir: str, raw_settings: dict, connect
         from pdf2zh_next.high_level import create_babeldoc_config
         from babeldoc.format.pdf.high_level import async_translate
         import requests
+
+        _install_pdf_space_mapping_fix()
 
         # Free-provider adapters omit HTTP timeouts. Bound their requests inside
         # this isolated process; cancellation also terminates the worker tree.
