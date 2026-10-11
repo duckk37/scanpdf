@@ -11,7 +11,7 @@ Bản Windows x64 dành cho Windows 10/11. Webcam và quyền camera phụ thu�
 
 ## Dịch sang tiếng Việt
 
-Trong **Dịch tiếng Việt**, chọn PDF, ngôn ngữ nguồn và nhà cung cấp: Google, Bing hoặc API tương thích OpenAI của bạn. Bing cần ngôn ngữ nguồn cụ thể. Với API riêng, nhập base URL, model và API key trên PC; API key lưu trong Windows Credential Manager. Nhà cung cấp có thể áp dụng giới hạn/tính phí theo tài khoản của bạn.
+Trong **Dịch tiếng Việt**, chọn PDF, ngôn ngữ nguồn và nhà cung cấp: Google, Bing, Gemini hoặc API tương thích OpenAI của bạn. Bing cần ngôn ngữ nguồn cụ thể. Với API riêng, nhập base URL, model và API key trên PC; API key lưu trong Windows Credential Manager. Nhà cung cấp có thể áp dụng giới hạn/tính phí theo tài khoản của bạn.
 
 Engine [PDFMathTranslate Next](https://github.com/PDFMathTranslate/PDFMathTranslate-next) / [BabelDOC](https://github.com/funstory-ai/BabelDOC) nhận diện bố cục và đặt bản dịch vào PDF, giữ hình/công thức theo khả năng của engine. Kết quả gồm PDF tiếng Việt và PDF song ngữ. Bản gốc được giữ trong thư viện. Bố cục, ngắt dòng và bản dịch cần được soát lại, nhất là bảng/công thức và trang phức tạp.
 
@@ -20,6 +20,19 @@ PDF cần có chữ thật có thể chọn được. Bản scan chỉ có ảnh
 Lần dịch đầu cần Internet để tải model nhận diện và font vào `%USERPROFILE%\.cache\babeldoc` theo cơ chế upstream. Model DocLayout khoảng 75 MB, model RapidOCR khoảng 4.7 MB, bộ font khoảng 266 MB; cộng tokenizer và dữ liệu phụ, nên dự trù khoảng 350 MB tải thêm. Những file này được tái sử dụng và upstream kiểm tra hash. Cache BabelDOC không có sẵn trong ZIP; thư viện RapidOCR có kèm các model OCR mặc định nhỏ hơn. Dịch qua Google/Bing/API vẫn cần mạng tới nhà cung cấp sau khi có cache.
 
 Ứng dụng xử lý từng tác vụ dịch để hạn chế RAM. Mỗi PDF tối đa 100 MB và 500 trang; tối đa 8 tác vụ đang chờ. Muốn dịch một phần tài liệu, dùng **Tách trang** tạo PDF nhỏ trước (backend API cũng nhận dải trang `1,3-5`; giao diện dịch hiện gửi toàn bộ PDF). Công việc/lỗi và tiến trình được hiển thị trong app; có thể hủy tác vụ đang chạy. File tác vụ tạm của phiên làm việc được dọn khi đóng app; phần còn sót do lỗi được dọn khi mở lại nếu đã quá 24 giờ. PDF đã nhập vào thư viện vẫn được giữ.
+
+## Trợ lý Gemini
+
+1. Tạo API key qua [Google AI Studio](https://aistudio.google.com/apikey), rồi nhập ở **Dịch tiếng Việt → Gemini** và nhấn **Lưu Gemini**. Key này tách biệt với API key tương thích OpenAI; không ghi vào JSON, Git hoặc PDF.
+2. Model mặc định `gemini-3.8-flash`; có thể chọn `gemini-3.5-flash-lite` hoặc nhập tên model Gemini được tài khoản của bạn hỗ trợ. Đối chiếu [danh sách model của Google](https://ai.google.dev/gemini-api/docs/models) nếu model bị ngừng phục vụ.
+3. Vào **Trợ lý Gemini**, chọn PDF và tóm tắt/hỏi đáp/giải thích, chọn cho phép gửi PDF tới Google, rồi nhấn phân tích. PDF scan cũng dùng được cho trợ lý. PDF bảo vệ cần mật khẩu đúng; bản gửi được mở khóa trong bộ nhớ và bản gốc vẫn giữ nguyên.
+4. Đọc kết quả và các trang Gemini đề xuất; mở bản gốc để kiểm tra. Sao chép hoặc xuất TXT khi cần. Trợ lý không chỉnh sửa PDF hay tự thực thi chỉ dẫn bên trong tài liệu.
+
+Giới hạn mỗi yêu cầu: PDF 10 MB, 60 trang; câu hỏi 3000 ký tự. PC xử lý một yêu cầu trợ lý tại một thời điểm. Có thể ngừng chờ; yêu cầu đã gửi có thể vẫn được Google xử lý. App không tự gửi lại yêu cầu trợ lý khi lỗi/mất kết nối. Mạng, quota, API key và quyền dùng model phụ thuộc tài khoản của bạn; không có key dùng chung được đóng gói.
+
+Trên iPhone/iPad, mở PDF → **Trợ lý Gemini**, dùng kết nối PC và mã ghép nối đã có. **Lưu Gemini** trên PC để trợ lý sẵn sàng ngay cả khi dịch PDF đang chọn Google/Bing. Nhấn **Xóa API key** trên PC để ngừng dùng key cho yêu cầu mới; yêu cầu đã gửi có thể tiếp tục.
+
+Gemini nhận toàn bộ PDF để phân tích, gồm chữ, hình, công thức và ảnh scan; khác với dịch giữ bố cục chỉ gửi các đoạn cần dịch. Nội dung được Google xử lý theo dịch vụ của họ. Chức năng xử lý PDF cục bộ và dịch Google/Bing vẫn dùng được khi chưa cấu hình Gemini.
 
 ## Kết nối iPhone với PC
 

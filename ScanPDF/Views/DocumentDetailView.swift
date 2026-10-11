@@ -219,6 +219,7 @@ struct DocumentDetailView: View {
                 if sourceWasLocked { tool("Gỡ mật khẩu", icon: "lock.open", id: "unlock") }
                 tool("Đọc chữ OCR", icon: "text.viewfinder", id: "ocr")
                 tool("Dịch sang Việt", icon: "character.bubble", id: "translate")
+                tool("Trợ lý Gemini", icon: "sparkles", id: "assistant")
                 tool("Chữ ký", icon: "signature", id: "sign")
             }
         }.disabled(isProcessing || isLoading)
@@ -328,6 +329,11 @@ struct DocumentDetailView: View {
                     }
                 }
             }
+        case .assistant:
+            if let document {
+                GeminiAssistantSheet(sourceURL: sourceURL, name: currentItem.name, pageCount: document.pageCount,
+                                     wasProtected: protectionPassword != nil) { index in currentPage = index }
+            }
         }
     }
 
@@ -351,6 +357,7 @@ struct DocumentDetailView: View {
         case "numberPages": activeSheet = .numberPages
         case "exportImages": activeSheet = .exportImages
         case "translate": activeSheet = .translate
+        case "assistant": activeSheet = .assistant
         default: break
         }
     }
@@ -612,7 +619,7 @@ private enum EditorPalette {
 
 private enum EditorSheet: Identifiable, Equatable {
     case password, rename, pages(PDFPageAction), reorder, compress, watermark, protect, signature, ocr, search
-    case exportImages, insert, numberPages, translate
+    case exportImages, insert, numberPages, translate, assistant
     var id: String {
         switch self {
         case .password: return "password"
@@ -629,6 +636,7 @@ private enum EditorSheet: Identifiable, Equatable {
         case .insert: return "insert"
         case .numberPages: return "numberPages"
         case .translate: return "translate"
+        case .assistant: return "assistant"
         }
     }
 }

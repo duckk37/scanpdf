@@ -27,7 +27,7 @@
     <key>NSPhotoLibraryAddUsageDescription</key>
     <string>ScanPDF lưu các trang PDF thành ảnh khi bạn chọn Lưu ảnh.</string>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>ScanPDF kết nối PC cùng mạng Wi-Fi để dịch PDF sang tiếng Việt và tải bản dịch về thư viện.</string>
+    <string>ScanPDF kết nối PC cùng mạng Wi-Fi để dịch PDF và sử dụng trợ lý Gemini cho tài liệu của bạn.</string>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsLocalNetworking</key>

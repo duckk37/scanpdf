@@ -26,6 +26,7 @@ struct ToolsView: View {
         .init(id: "sign", title: "Chữ ký", subtitle: "Vẽ và chèn chữ ký", icon: "signature"),
         .init(id: "ocr", title: "Nhận dạng chữ", subtitle: "Trích văn bản bằng OCR", icon: "text.viewfinder"),
         .init(id: "translate", title: "Dịch sang tiếng Việt", subtitle: "Kết nối ScanPDF PC qua Wi-Fi", icon: "character.bubble"),
+        .init(id: "assistant", title: "Trợ lý Gemini", subtitle: "Tóm tắt, hỏi đáp, giải thích qua PC", icon: "sparkles"),
         .init(id: "protect", title: "Đặt mật khẩu", subtitle: "Tạo bản PDF được bảo vệ", icon: "lock"),
         .init(id: "unlock", title: "Gỡ mật khẩu", subtitle: "Cần mật khẩu hiện tại", icon: "lock.open")
     ]

@@ -24,6 +24,7 @@ from typing import Callable
 import pymupdf
 
 from .pdf_ops import PDFError, open_document
+from .gemini import DEFAULT_GEMINI_MODEL, GeminiSettings
 
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 MAX_PENDING_JOBS = 8
@@ -42,12 +43,16 @@ class TranslationSettings:
     pages: str | None = None
 
     def validate(self) -> "TranslationSettings":
-        if self.service not in {"google", "bing", "openai", "server"}:
+        if self.service not in {"google", "bing", "openai", "gemini", "server"}:
             raise PDFError("Dịch vụ dịch không được hỗ trợ.")
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9-]{1,19}", self.source) or self.target != "vi":
             raise PDFError("Chọn ngôn ngữ nguồn hợp lệ; bản dịch hiện hỗ trợ tiếng Việt.")
         if self.service == "bing" and self.source == "auto":
             raise PDFError("Bing cần chọn ngôn ngữ nguồn cụ thể. Dùng Google để tự nhận diện.")
+        if self.service == "gemini":
+            GeminiSettings(model=self.model or DEFAULT_GEMINI_MODEL, api_key=self.api_key).validate()
+            if self.base_url:
+                raise PDFError("Gemini dùng địa chỉ API chính thức cố định của Google.")
         if self.service == "openai":
             if not self.api_key or not self.model or len(self.api_key) > 4096 or len(self.model) > 200:
                 raise PDFError("Nhập API key và tên model cho dịch vụ API riêng trên PC.")
@@ -112,7 +117,9 @@ def _safe_error(error: Exception | str, settings: TranslationSettings) -> str:
 
 def _upstream_settings(settings: TranslationSettings, output: Path):
     from pdf2zh_next.config.model import SettingsModel
-    engine = {"translate_engine_type": {"google": "Google", "bing": "Bing", "openai": "OpenAI"}[settings.service]}
+    engine = {"translate_engine_type": {"google": "Google", "bing": "Bing", "openai": "OpenAI", "gemini": "Gemini"}[settings.service]}
+    if settings.service == "gemini":
+        engine.update(gemini_api_key=settings.api_key, gemini_model=settings.model or DEFAULT_GEMINI_MODEL)
     if settings.service == "openai":
         engine.update(openai_api_key=settings.api_key, openai_base_url=settings.base_url,
                       openai_model=settings.model, openai_timeout="60")
@@ -127,6 +134,16 @@ def _upstream_settings(settings: TranslationSettings, output: Path):
                 "skip_scanned_detection": False, "no_remove_non_formula_lines": True},
         "report_interval": .3,
     })
+
+
+def _prepare_gemini_settings(upstream):
+    """Transform the pinned Gemini adapter and bound its SDK HTTP timeout."""
+    upstream.validate_settings()
+    engine = upstream.translate_engine_settings
+    if engine.translate_engine_type != "OpenAI" or not isinstance(engine.openai_base_url, str) or engine.openai_base_url.rstrip("/") != "https://generativelanguage.googleapis.com/v1beta/openai":
+        raise PDFError("Engine Gemini không tương thích với địa chỉ API chính thức.")
+    engine.openai_timeout = "60"
+    return upstream
 
 
 def _install_pdf_space_mapping_fix() -> None:
@@ -205,6 +222,8 @@ def _engine_worker(input_path: str, output_dir: str, raw_settings: dict, connect
             from .free_translate import install_google_adapter
             install_google_adapter()
         upstream = _upstream_settings(settings, Path(output_dir))
+        if settings.service == "gemini":
+            _prepare_gemini_settings(upstream)
         # Built-in PDF fonts can lack a family descriptor. Infer the dominant
         # body family so a Helvetica document keeps sans-serif Vietnamese text.
         family_weights = {"serif": 0, "sans-serif": 0}

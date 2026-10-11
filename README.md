@@ -1,6 +1,15 @@
 # ScanPDF
 
-Ứng dụng quét tài liệu, xử lý PDF và dịch PDF sang tiếng Việt cho **iPhone/iPad iOS 17+** và **Windows x64**. Phiên bản mã nguồn hiện tại: **1.2.0**. App iOS dùng SwiftUI, PDFKit, Vision, VisionKit và PhotosUI của Apple. App Windows dùng PySide6, PyMuPDF và engine PDFMathTranslate Next/BabelDOC.
+Ứng dụng quét tài liệu, xử lý PDF và dịch PDF sang tiếng Việt cho **iPhone/iPad iOS 17+** và **Windows x64**. Phiên bản mã nguồn hiện tại: **1.3.0**. App iOS dùng SwiftUI, PDFKit, Vision, VisionKit và PhotosUI của Apple. App Windows dùng PySide6, PyMuPDF và engine PDFMathTranslate Next/BabelDOC.
+
+## Thay đổi trong 1.3.0
+
+- Thêm Gemini làm dịch vụ dịch PDF, dùng API key Google AI Studio của bạn; Google/Bing miễn phí vẫn có sẵn.
+- Trợ lý Gemini trên Windows và iOS: tóm tắt, hỏi đáp, giải thích khái niệm/công thức bằng tiếng Việt; đưa số trang để đối chiếu và cho sao chép/xuất kết quả.
+- Trợ lý phân tích được cả PDF scan bằng cách gửi toàn PDF tới Google sau khi bạn chủ động chọn cho phép. Giới hạn 10 MB, 60 trang; dịch giữ bố cục vẫn cần PDF có chữ thật.
+- Sửa khoảng trắng trong PDF dịch để tìm kiếm cụm từ/sao chép văn bản tiếng Việt, giữ nguyên ảnh render, hình và công thức.
+
+Gemini cần API key riêng, nhập và lưu trên **ScanPDF PC → Dịch tiếng Việt → Gemini**; key lưu trong Windows Credential Manager, có nút xóa key. iPhone dùng cùng kết nối PC qua Wi-Fi, không cần nhập API key. Hạn mức và chi phí theo tài khoản Gemini API; xem [hướng dẫn API key của Google](https://ai.google.dev/gemini-api/docs/api-key). Câu trả lời AI và trang được đề xuất cần đối chiếu với PDF gốc.
 
 ## Thay đổi trong 1.2.0
 

@@ -40,7 +40,7 @@ struct AboutView: View {
                             Text("Quét gọn. Lưu trọn.").foregroundStyle(.secondary)
                         }
                     }.padding(.vertical, 14)
-                    LabeledContent("Phiên bản", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.0")
+                    LabeledContent("Phiên bản", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.3.0")
                     LabeledContent("Tài liệu", value: "\(store.documents.count)")
                     LabeledContent("Dung lượng", value: ByteCountFormatter.string(fromByteCount: store.documents.reduce(0) { $0 + $1.byteCount }, countStyle: .file))
                 }
@@ -59,6 +59,10 @@ struct AboutView: View {
                     Text("Dịch giữ bố cục hiện dành cho PDF gốc có văn bản. PDF scan và ảnh toàn trang có lớp OCR ẩn chưa được hỗ trợ.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
+                Section("Trợ lý Google Gemini") {
+                    Text("Tóm tắt, hỏi đáp và giải thích PDF, gồm cả tài liệu scan. Cấu hình API key Gemini trên ScanPDF PC, rồi kết nối iPhone/iPad cùng Wi-Fi.")
+                    Text("Trợ lý gửi toàn PDF và câu hỏi tới Google qua PC sau khi bạn đồng ý. Giới hạn 10 MB/60 trang mỗi lần. Câu trả lời và tham chiếu trang do AI tạo; hãy đối chiếu với tài liệu.")
+                }.font(.footnote).foregroundStyle(.secondary)
                 Section("Những điều cần biết") {
                     Text("Quét camera cần iPhone/iPad có hỗ trợ. OCR phụ thuộc các ngôn ngữ mà iOS hỗ trợ và chất lượng ảnh; hãy kiểm tra lại kết quả nhận dạng.")
                     Text("Nén PDF chuyển trang thành ảnh và làm mất lớp văn bản, biểu mẫu và chú thích có thể sửa. App luôn lưu bản nén thành tài liệu mới.")

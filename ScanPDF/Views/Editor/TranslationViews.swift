@@ -208,7 +208,7 @@ struct TranslationSettingsView: View {
     }
 }
 
-private struct TranslationConnectionFields: View {
+struct TranslationConnectionFields: View {
     @Binding var address: String
     @Binding var token: String
     var body: some View {
@@ -225,6 +225,20 @@ private struct TranslationHealthDetails: View {
     var body: some View {
         Label(health.engineReady ? "Đã kết nối PC · Công cụ dịch đã cài" : "Đã kết nối PC · Cần cài công cụ dịch", systemImage: health.engineReady ? "checkmark.circle" : "desktopcomputer")
             .font(.footnote).foregroundStyle(health.engineReady ? Color.teal : Color.orange)
-        LabeledContent("Dịch vụ trên PC", value: health.provider).font(.caption)
+        LabeledContent("Dịch vụ trên PC", value: providerTitle).font(.caption)
+        if let ready = health.assistantReady {
+            Label(ready ? "Trợ lý Gemini đã sẵn sàng" : "Gemini cần cấu hình API key trên PC", systemImage: "sparkles")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private var providerTitle: String {
+        switch health.provider.lowercased() {
+        case "gemini": return "Google Gemini"
+        case "google": return "Google"
+        case "bing": return "Bing"
+        case "openai": return "API tương thích OpenAI"
+        default: return health.provider
+        }
     }
 }

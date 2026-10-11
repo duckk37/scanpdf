@@ -9,6 +9,7 @@ struct TranslationHealth: Decodable {
     let engineReady: Bool
     let maxUploadBytes: Int64
     let provider: String
+    var assistantReady: Bool? = nil
 }
 
 enum TranslationOutputKind: String, Codable, CaseIterable, Identifiable {
@@ -204,7 +205,7 @@ final class TranslationClient: TranslationServicing {
     }
 }
 
-private final class TranslationSessionDelegate: NSObject, URLSessionTaskDelegate {
+final class TranslationSessionDelegate: NSObject, URLSessionTaskDelegate {
     let uploadProgress: (@Sendable (Double) -> Void)?
     init(uploadProgress: (@Sendable (Double) -> Void)?) { self.uploadProgress = uploadProgress }
 

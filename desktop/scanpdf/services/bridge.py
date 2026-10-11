@@ -2,22 +2,47 @@
 from __future__ import annotations
 
 import json
+import base64
 import secrets
 import socket
+import tempfile
 import threading
 import time
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from starlette.concurrency import run_in_threadpool
 import uvicorn
 
 from .jobs import JobManager, MAX_UPLOAD_BYTES, TranslationSettings
 from .pdf_ops import PDFError
+from .gemini import GeminiAssistant
+
+ASSISTANT_UPLOAD_BYTES = 10 * 1024 * 1024
 
 
-def create_app(manager: JobManager, token: str) -> FastAPI:
+async def _read_pdf_upload(request: Request, limit: int) -> bytes:
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type not in {"application/pdf", "application/octet-stream"}:
+        raise HTTPException(415, "Gửi nội dung PDF với Content-Type: application/pdf.")
+    try:
+        length = int(request.headers.get("content-length", "0"))
+        if length < 0:
+            raise ValueError()
+    except ValueError:
+        raise HTTPException(400, "Content-Length không hợp lệ.")
+    if length > limit:
+        raise HTTPException(413, f"PDF vượt quá giới hạn {limit // 1024 // 1024} MB.")
+    data = bytearray()
+    async for chunk in request.stream():
+        if len(data) + len(chunk) > limit:
+            raise HTTPException(413, f"PDF vượt quá giới hạn {limit // 1024 // 1024} MB.")
+        data.extend(chunk)
+    return bytes(data)
+
+
+def create_app(manager: JobManager, token: str, assistant: GeminiAssistant | None = None) -> FastAPI:
     if len(token) < 24:
         raise ValueError("Mã ghép nối cần ít nhất 24 ký tự ngẫu nhiên.")
 
@@ -34,29 +59,43 @@ def create_app(manager: JobManager, token: str) -> FastAPI:
         return {"protocol_version": 1, "app": "ScanPDF", "engine": "pdf2zh-next/BabelDOC",
                 "engine_ready": manager.engine_ready, "provider": manager.default_settings.service,
                 "target_language": "vi", "scan_translation": False,
-                "max_upload_bytes": MAX_UPLOAD_BYTES}
+                "max_upload_bytes": MAX_UPLOAD_BYTES,
+                "assistant_ready": assistant is not None and assistant.settings is not None,
+                "assistant_max_upload_bytes": ASSISTANT_UPLOAD_BYTES}
+
+    @app.post("/assistant")
+    async def analyze(request: Request, response: Response,
+                      x_assistant_options: str | None = Header(default=None)):
+        if assistant is None or assistant.settings is None:
+            raise HTTPException(503, "Nhập và lưu Gemini API key trong ScanPDF PC trước khi dùng trợ lý.")
+        try:
+            if x_assistant_options is None or len(x_assistant_options) > 20000:
+                raise ValueError()
+            options = json.loads(base64.b64decode(x_assistant_options, validate=True).decode("utf-8"))
+            if not isinstance(options, dict) or set(options) - {"mode", "question"}:
+                raise ValueError()
+            mode, question = options.get("mode", "summary"), options.get("question", "")
+            if mode not in {"summary", "question", "explain"} or not isinstance(question, str) or len(question) > 3000:
+                raise ValueError()
+        except (ValueError, TypeError, UnicodeError, RecursionError):
+            raise HTTPException(422, "Thiết lập trợ lý không hợp lệ.")
+        data = await _read_pdf_upload(request, ASSISTANT_UPLOAD_BYTES)
+        try:
+            with tempfile.TemporaryDirectory(prefix="scanpdf-assistant-") as directory:
+                source = Path(directory) / "input.pdf"
+                source.write_bytes(data)
+                result = await run_in_threadpool(assistant.analyze_pdf, source, mode=mode, question=question)
+            response.headers["Cache-Control"] = "no-store"
+            return result
+        except PDFError as error:
+            raise HTTPException(422, str(error))
 
     @app.post("/jobs", status_code=202)
     async def submit(request: Request, filename: str = "document.pdf", service: str = "server",
                      source: str = "auto", target: str = "vi",
                      x_translation_settings: str | None = Header(default=None),
                      x_request_id: str | None = Header(default=None)):
-        content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-        if content_type not in {"application/pdf", "application/octet-stream"}:
-            raise HTTPException(415, "Gửi nội dung PDF với Content-Type: application/pdf.")
-        try:
-            content_length = int(request.headers.get("content-length", "0"))
-            if content_length < 0:
-                raise ValueError()
-        except ValueError:
-            raise HTTPException(400, "Content-Length không hợp lệ.")
-        if content_length > MAX_UPLOAD_BYTES:
-            raise HTTPException(413, "PDF vượt quá giới hạn 100 MB.")
-        data = bytearray()
-        async for chunk in request.stream():
-            if len(data) + len(chunk) > MAX_UPLOAD_BYTES:
-                raise HTTPException(413, "PDF vượt quá giới hạn 100 MB.")
-            data.extend(chunk)
+        data = await _read_pdf_upload(request, MAX_UPLOAD_BYTES)
         try:
             raw = json.loads(x_translation_settings) if x_translation_settings else {}
             if not isinstance(raw, dict):
@@ -65,7 +104,7 @@ def create_app(manager: JobManager, token: str) -> FastAPI:
             settings = TranslationSettings(**options)
             return await run_in_threadpool(manager.submit_bytes, bytes(data), filename, settings,
                                            request_id=x_request_id)
-        except (ValueError, TypeError, PDFError) as error:
+        except (ValueError, TypeError, PDFError, RecursionError) as error:
             # Validation errors never contain the API key or settings dictionary.
             detail = str(error) if isinstance(error, PDFError) else "Cấu hình dịch hoặc Request ID không hợp lệ."
             raise HTTPException(422, detail)
@@ -108,11 +147,12 @@ def create_app(manager: JobManager, token: str) -> FastAPI:
 
 
 class BridgeServer:
-    def __init__(self, manager: JobManager, token: str, host: str = "0.0.0.0", port: int = 8765):
+    def __init__(self, manager: JobManager, token: str, host: str = "0.0.0.0", port: int = 8765,
+                 assistant: GeminiAssistant | None = None):
         if not 1 <= port <= 65535:
             raise ValueError("Cổng mạng không hợp lệ.")
         self.manager, self.token, self.host, self.port = manager, token, host, port
-        self.app = create_app(manager, token)
+        self.app = create_app(manager, token, assistant)
         self._server = None
         self._thread = None
         self._socket = None

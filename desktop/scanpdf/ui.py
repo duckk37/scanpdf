@@ -23,6 +23,7 @@ from .storage import LibraryItem, LibraryStore
 from .services import pdf_ops
 from .services.jobs import JobManager, TranslationSettings
 from .services.bridge import BridgeServer
+from .services.gemini import GeminiAssistant, GeminiSettings
 
 
 STYLE = """
@@ -107,6 +108,9 @@ class MainWindow(QMainWindow):
         self.root = root
         self.store = LibraryStore(root)
         self.manager = JobManager(root / "TranslationJobs")
+        self.assistant = GeminiAssistant()
+        self.assistant_inflight = False
+        self.assistant_generation = 0
         self.bridge = None
         self.thread_pool = QThreadPool(self)
         self.thread_pool.setMaxThreadCount(2)
@@ -138,7 +142,7 @@ class MainWindow(QMainWindow):
         navigation.addWidget(label("Từ giấy thành tri thức."))
         navigation.addSpacing(28)
         self.navigation_buttons = []
-        for title, index in [("Thư viện", 0), ("Công cụ PDF", 1), ("Dịch tiếng Việt", 2), ("Kết nối iPhone", 3)]:
+        for title, index in [("Thư viện", 0), ("Công cụ PDF", 1), ("Dịch tiếng Việt", 2), ("Kết nối iPhone", 3), ("Trợ lý Gemini", 4)]:
             entry = button(title, lambda checked=False, value=index: self.navigate(value))
             entry.setCheckable(True)
             navigation.addWidget(entry)
@@ -153,11 +157,13 @@ class MainWindow(QMainWindow):
         self.stack.addWidget(self.build_tools())
         self.stack.addWidget(self.build_translation())
         self.stack.addWidget(self.build_connection())
+        self.stack.addWidget(self.build_assistant())
         self.stack.addWidget(self.build_document())
         self.statusBar().showMessage("Sẵn sàng. Tài liệu gốc được giữ trong thư viện.")
         self.refresh_library()
         self.navigate(0)
         self.apply_provider_settings(silent=True)
+        self.save_gemini_settings(silent=True)
         self.job_timer = QTimer(self)
         self.job_timer.timeout.connect(self.poll_job)
         self.job_timer.start(900)
@@ -179,6 +185,8 @@ class MainWindow(QMainWindow):
             entry.setChecked(position == index)
         if index == 2:
             self.refresh_translation_documents()
+        elif index == 4:
+            self.refresh_assistant_documents()
 
     def build_library(self):
         page, layout = self.page("Tài liệu của bạn", "Quét, chỉnh sửa và dịch PDF. Mọi bản gốc nằm trong thư viện trên PC.")
@@ -236,6 +244,8 @@ class MainWindow(QMainWindow):
             self.library_list.addItem(entry)
             entry.setSelected(item.id in selected)
         self.library_count.setText(f"{len(values)} / {len(self.store.items)} tài liệu  ·  Nhấp đôi để mở; Ctrl + nhấp để chọn nhiều PDF.")
+        if hasattr(self, "assistant_document"):
+            self.refresh_assistant_documents()
 
     def selected_items(self):
         identifiers = {entry.data(Qt.UserRole) for entry in self.library_list.selectedItems()}
@@ -365,6 +375,7 @@ class MainWindow(QMainWindow):
         grid = QGridLayout()
         grid.setSpacing(16)
         tools = [
+            ("Trợ lý Gemini", "Tóm tắt, hỏi đáp và giải thích tài liệu", "assistant"),
             ("Dịch tiếng Việt", "Giữ bố cục, hình và công thức", "translate"),
             ("Ảnh / Camera → PDF", "Tạo tài liệu từ ảnh chụp", "scan"),
             ("Ghép PDF", "Kết hợp các tài liệu đã chọn", "merge"),
@@ -396,6 +407,9 @@ class MainWindow(QMainWindow):
         return page
 
     def choose_tool(self, operation):
+        if operation == "assistant":
+            self.navigate(4)
+            return
         if operation == "scan":
             self.scan_dialog()
             return
@@ -497,7 +511,7 @@ class MainWindow(QMainWindow):
             self.current_page = 0
             self.page_spec.clear()
             self.document_name.setText(item.name)
-            self.stack.setCurrentIndex(4)
+            self.stack.setCurrentIndex(5)
             self.render_current_page()
             return True
         except Exception as error:
@@ -660,9 +674,187 @@ class MainWindow(QMainWindow):
         except Exception as error:
             self.message(str(error), error=True)
 
+    def save_gemini_settings(self, checked=False, silent=False):
+        try:
+            settings = GeminiSettings(model=self.gemini_model.currentText().strip(), api_key=self.gemini_key.text().strip()).validate()
+            if not silent:
+                import keyring
+                keyring.set_password("ScanPDF", "gemini-api-key", settings.api_key)
+                self.preferences["gemini_model"] = settings.model
+                temporary = self.preferences_file.with_suffix(".pending")
+                temporary.write_text(json.dumps(self.preferences, ensure_ascii=False, indent=2), encoding="utf-8")
+                temporary.replace(self.preferences_file)
+            self.assistant.configure(settings)
+            if not silent:
+                self.statusBar().showMessage("Đã lưu Gemini. Trợ lý trên PC/iPhone đã sẵn sàng.", 7000)
+            return settings
+        except Exception as error:
+            if not silent:
+                self.message(str(error), error=True)
+            return None
+
+    def forget_gemini(self):
+        try:
+            import keyring
+            try:
+                keyring.delete_password("ScanPDF", "gemini-api-key")
+            except keyring.errors.PasswordDeleteError:
+                pass
+            self.assistant.configure(None)
+            self.gemini_key.clear()
+            if self.manager.default_settings.service == "gemini":
+                self.manager.set_default_settings(TranslationSettings())
+                self.provider.setCurrentIndex(self.provider.findData("google"))
+                self.preferences["service"] = "google"
+                temporary = self.preferences_file.with_suffix(".pending")
+                temporary.write_text(json.dumps(self.preferences, ensure_ascii=False, indent=2), encoding="utf-8")
+                temporary.replace(self.preferences_file)
+            self.statusBar().showMessage("Đã xóa Gemini API key. Yêu cầu đã gửi có thể vẫn đang được Google xử lý.", 8000)
+        except Exception as error:
+            self.message(str(error), error=True)
+
+    def build_assistant(self):
+        page, layout = self.page("Trợ lý Gemini", "Đọc tài liệu bằng AI: tóm tắt, hỏi đáp và giải thích bằng tiếng Việt.")
+        frame, box = card()
+        form = QFormLayout()
+        self.assistant_document = QComboBox()
+        self.assistant_mode = QComboBox()
+        for title, mode in [("Tóm tắt tài liệu", "summary"), ("Hỏi theo nội dung PDF", "question"), ("Giải thích khái niệm / công thức", "explain")]:
+            self.assistant_mode.addItem(title, mode)
+        form.addRow("Tài liệu", self.assistant_document)
+        form.addRow("Yêu cầu", self.assistant_mode)
+        box.addLayout(form)
+        self.assistant_question = QTextEdit()
+        self.assistant_question.setMaximumHeight(100)
+        self.assistant_question.setPlaceholderText("Nhập câu hỏi hoặc phần cần giải thích (tối đa 3000 ký tự).")
+        box.addWidget(self.assistant_question)
+        self.assistant_consent = QCheckBox("Cho phép gửi toàn PDF đã chọn tới Google để phân tích yêu cầu này")
+        box.addWidget(self.assistant_consent)
+        box.addWidget(label("Nhận PDF gốc hoặc scan, tối đa 10 MB / 60 trang. API key cấu hình ở Dịch tiếng Việt → Gemini. "
+                            "Kết quả AI có thể sai; mở trang được đề xuất để đối chiếu.", "Muted"))
+        actions = QHBoxLayout()
+        actions.addWidget(button("Cài đặt Gemini", self.open_gemini_configuration))
+        actions.addStretch()
+        self.assistant_cancel = button("Ngừng chờ", self.stop_assistant_wait)
+        self.assistant_cancel.setEnabled(False)
+        actions.addWidget(self.assistant_cancel)
+        self.assistant_send = button("Phân tích bằng Gemini", self.start_assistant, primary=True)
+        actions.addWidget(self.assistant_send)
+        box.addLayout(actions)
+        self.assistant_progress = QProgressBar()
+        self.assistant_progress.setRange(0, 0)
+        self.assistant_progress.hide()
+        box.addWidget(self.assistant_progress)
+        layout.addWidget(frame)
+        self.assistant_result = QTextEdit()
+        self.assistant_result.setReadOnly(True)
+        self.assistant_result.setPlaceholderText("Câu trả lời và các trang đối chiếu sẽ xuất hiện ở đây.")
+        layout.addWidget(self.assistant_result, 1)
+        outputs = QHBoxLayout()
+        outputs.addWidget(button("Sao chép kết quả", lambda: QApplication.clipboard().setText(self.assistant_result.toPlainText())))
+        outputs.addWidget(button("Xuất kết quả TXT", self.export_assistant))
+        outputs.addStretch()
+        layout.addLayout(outputs)
+        self.assistant_document.currentIndexChanged.connect(self.reset_assistant_result)
+        return page
+
+    def refresh_assistant_documents(self):
+        selected = self.assistant_document.currentData()
+        self.assistant_document.blockSignals(True)
+        self.assistant_document.clear()
+        for item in sorted(self.store.items, key=lambda value: -value.created_at):
+            self.assistant_document.addItem(item.name, item.id)
+        index = self.assistant_document.findData(selected)
+        if index >= 0:
+            self.assistant_document.setCurrentIndex(index)
+        self.assistant_document.blockSignals(False)
+        if self.assistant_document.currentData() != selected:
+            self.reset_assistant_result()
+
+    def reset_assistant_result(self, *_):
+        self.assistant_generation += 1
+        self.assistant_result.clear()
+        self.assistant_consent.setChecked(False)
+
+    def stop_assistant_wait(self):
+        self.assistant_generation += 1
+        self.assistant_progress.hide()
+        self.assistant_cancel.setEnabled(False)
+        self.assistant_result.setPlainText("Đã ngừng chờ. Yêu cầu đã gửi có thể vẫn được Google xử lý; chờ yêu cầu đó kết thúc trước khi gửi tiếp.")
+
+    def start_assistant(self):
+        if self.assistant_inflight:
+            return
+        identifier = self.assistant_document.currentData()
+        item = next((entry for entry in self.store.items if entry.id == identifier), None)
+        if item is None:
+            self.message("Nhập PDF vào thư viện trước khi dùng trợ lý.")
+            return
+        if not self.assistant_consent.isChecked():
+            self.message("Chọn cho phép gửi PDF tới Google trước khi phân tích.")
+            return
+        if self.assistant.settings is None:
+            self.message("Nhập và lưu Gemini API key ở Dịch tiếng Việt → Gemini trước.")
+            return
+        try:
+            password = self.password_for(item)
+            if password is None:
+                return
+            mode, question = self.assistant_mode.currentData(), self.assistant_question.toPlainText().strip()
+            if len(question) > 3000 or (mode == "question" and not question):
+                raise ValueError("Nhập câu hỏi từ 1 đến 3000 ký tự.")
+            source = self.store.path(item)
+            self.assistant_generation += 1
+            generation = self.assistant_generation
+            self.assistant_inflight = True
+            self.assistant_send.setEnabled(False)
+            self.assistant_document.setEnabled(False)
+            self.assistant_consent.setChecked(False)
+            self.assistant_cancel.setEnabled(True)
+            self.assistant_progress.show()
+            self.assistant_result.clear()
+            worker = Worker(lambda: self.assistant.analyze_pdf(source, mode=mode, question=question, password=password))
+            self.workers.add(worker)
+            def finish(result=None, error=None):
+                self.workers.discard(worker)
+                self.assistant_inflight = False
+                self.assistant_send.setEnabled(True)
+                self.assistant_document.setEnabled(True)
+                self.assistant_cancel.setEnabled(False)
+                self.assistant_progress.hide()
+                if generation != self.assistant_generation:
+                    return
+                if error:
+                    self.assistant_result.setPlainText(error)
+                    return
+                pages = ", ".join(str(page) for page in result["pages"]) or "Không có trang hỗ trợ được đề xuất"
+                self.assistant_result.setPlainText(f"{item.name}\nModel: {result['model']}\n\n{result['answer']}\n\nTrang Gemini đề xuất để đối chiếu: {pages}\nKết quả AI có thể sai; hãy soát với PDF gốc.")
+            worker.signals.finished.connect(lambda result: finish(result=result))
+            worker.signals.failed.connect(lambda error: finish(error=error))
+            self.thread_pool.start(worker)
+        except Exception as error:
+            self.message(str(error), error=True)
+
+    def export_assistant(self):
+        text = self.assistant_result.toPlainText()
+        if not text:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Xuất kết quả Gemini", "ScanPDF-Gemini.txt", "Văn bản (*.txt)")
+        if path:
+            try:
+                Path(path).write_text(text, encoding="utf-8")
+            except OSError:
+                self.message("Không thể ghi tệp tại vị trí đã chọn.", error=True)
+
+    def open_gemini_configuration(self):
+        self.navigate(2)
+        self.translation_scroll.ensureWidgetVisible(self.gemini_settings_frame)
+        self.gemini_key.setFocus()
+
     def build_translation(self):
         page, layout = self.page("Dịch PDF sang tiếng Việt", "Giữ bố cục trang, đồ họa và công thức với PDFMathTranslate / BabelDOC.")
         scroll = QScrollArea()
+        self.translation_scroll = scroll
         scroll.setWidgetResizable(True)
         content = QWidget()
         inner = QVBoxLayout(content)
@@ -675,6 +867,7 @@ class MainWindow(QMainWindow):
         self.provider = QComboBox()
         self.provider.addItem("Google · Miễn phí qua mạng", "google")
         self.provider.addItem("Bing · Miễn phí, chọn ngôn ngữ nguồn", "bing")
+        self.provider.addItem("Gemini · API key Google của bạn", "gemini")
         self.provider.addItem("API riêng tương thích OpenAI", "openai")
         self.provider.setCurrentIndex(max(0, self.provider.findData(self.preferences.get("service", "google"))))
         self.source_language = QComboBox()
@@ -713,12 +906,39 @@ class MainWindow(QMainWindow):
             "Lần đầu có thể tải khoảng 350 MB model và font. Dịch miễn phí phụ thuộc giới hạn của nhà cung cấp.", "Muted")
         box.addWidget(self.translation_disclosure)
         actions = QHBoxLayout()
+        actions.addWidget(button("Cấu hình Gemini", self.open_gemini_configuration))
         actions.addWidget(button("Lưu cấu hình cho iPhone", self.apply_provider_settings))
         actions.addStretch()
         self.translate_button = button("Dịch tài liệu → Tiếng Việt", self.start_translation, primary=True)
         actions.addWidget(self.translate_button)
         box.addLayout(actions)
         inner.addWidget(frame)
+        gemini_frame, gemini_box = card()
+        self.gemini_settings_frame = gemini_frame
+        gemini_box.addWidget(label("Gemini cho dịch & trợ lý tài liệu", "Subheading"))
+        gemini_form = QFormLayout()
+        self.gemini_model = QComboBox()
+        self.gemini_model.setEditable(True)
+        self.gemini_model.addItems(["gemini-3.8-flash", "gemini-3.5-flash-lite"])
+        self.gemini_model.setCurrentText(self.preferences.get("gemini_model", "gemini-3.8-flash"))
+        self.gemini_key = QLineEdit()
+        self.gemini_key.setEchoMode(QLineEdit.Password)
+        self.gemini_key.setPlaceholderText("API key Google AI Studio · Lưu trong Credential Manager")
+        try:
+            import keyring
+            self.gemini_key.setText(keyring.get_password("ScanPDF", "gemini-api-key") or "")
+        except Exception:
+            pass
+        gemini_form.addRow("Model Gemini", self.gemini_model)
+        gemini_form.addRow("Gemini API key", self.gemini_key)
+        gemini_box.addLayout(gemini_form)
+        gemini_actions = QHBoxLayout()
+        gemini_actions.addWidget(button("Lưu Gemini", self.save_gemini_settings))
+        gemini_actions.addWidget(button("Xóa API key", self.forget_gemini))
+        gemini_actions.addStretch()
+        gemini_box.addLayout(gemini_actions)
+        gemini_box.addWidget(label("Dịch bằng Gemini gửi văn bản tới Google. Trợ lý gửi toàn PDF tới Google khi bạn chọn phân tích. "
+                                   "Hạn mức/chi phí theo Gemini API của bạn; API key chỉ lưu trên PC.", "Muted"))
         status_frame, status_box = card()
         status_box.addWidget(label("Tiến trình & bản dịch", "Subheading"))
         self.job_list = QListWidget()
@@ -744,6 +964,7 @@ class MainWindow(QMainWindow):
         outputs.addWidget(self.save_dual_button)
         status_box.addLayout(outputs)
         inner.addWidget(status_frame)
+        inner.addWidget(gemini_frame)
         inner.addWidget(label(
             "Phù hợp nhất với PDF gốc có văn bản chọn được. Bản scan chỉ có ảnh hoặc lớp OCR ẩn chưa hỗ trợ dịch giữ bố cục. "
             "Công thức được giữ nguyên; chú thích bằng chữ được dịch. Chữ nằm bên trong một ảnh minh họa có thể vẫn là ngôn ngữ gốc. "
@@ -768,9 +989,9 @@ class MainWindow(QMainWindow):
             source = self.source_language.currentData()
             if service == "bing" and source == "auto":
                 raise ValueError("Bing yêu cầu chọn ngôn ngữ nguồn. Chọn Google để tự nhận diện ngôn ngữ.")
-            api_key = self.api_key.text().strip() if service == "openai" else None
+            api_key = self.api_key.text().strip() if service == "openai" else (self.gemini_key.text().strip() if service == "gemini" else None)
             base_url = self.api_url.text().strip() if service == "openai" else None
-            model = self.api_model.text().strip() if service == "openai" else None
+            model = self.api_model.text().strip() if service == "openai" else (self.gemini_model.currentText().strip() if service == "gemini" else None)
             if service == "openai" and (not api_key or not base_url or not model):
                 raise ValueError("Điền địa chỉ API, model và API key trước khi dùng API riêng.")
             settings = TranslationSettings(service=service, source=source, target="vi",
@@ -778,8 +999,11 @@ class MainWindow(QMainWindow):
             settings.validate()
             if api_key and not silent:
                 import keyring
-                keyring.set_password("ScanPDF", "translation-api-key", api_key)
-            self.preferences = {"service": service, "source": source,
+                keyring.set_password("ScanPDF", "gemini-api-key" if service == "gemini" else "translation-api-key", api_key)
+            if service == "gemini":
+                self.assistant.configure(GeminiSettings(model=model, api_key=api_key))
+            self.preferences = {**self.preferences, "service": service, "source": source,
+                                "gemini_model": self.gemini_model.currentText().strip(),
                                 "base_url": self.api_url.text().strip(), "model": self.api_model.text().strip()}
             temporary = self.preferences_file.with_suffix(".pending")
             temporary.write_text(json.dumps(self.preferences, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -967,7 +1191,7 @@ class MainWindow(QMainWindow):
             self.server_port.setEnabled(True)
         else:
             try:
-                self.bridge = BridgeServer(self.manager, self.pair_token.text(), host="0.0.0.0", port=self.server_port.value())
+                self.bridge = BridgeServer(self.manager, self.pair_token.text(), host="0.0.0.0", port=self.server_port.value(), assistant=self.assistant)
                 self.bridge.start()
                 self.bridge_status.setText("Máy chủ đang bật. Chỉ thiết bị có mã ghép nối mới gửi được tài liệu.")
                 self.bridge_button.setText("Tắt máy chủ dịch")
@@ -1000,6 +1224,10 @@ class MainWindow(QMainWindow):
             dialog.cleanup()
 
     def closeEvent(self, event):
+        if self.assistant_inflight:
+            self.message("Gemini đang xử lý yêu cầu đã gửi. Chờ phản hồi hoặc hết thời gian kết nối trước khi đóng app.")
+            event.ignore()
+            return
         if self.busy:
             self.message("Chờ thao tác PDF hoàn tất trước khi đóng ứng dụng.")
             event.ignore()

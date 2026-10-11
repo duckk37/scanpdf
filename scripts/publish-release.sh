@@ -27,6 +27,8 @@ Hai workflow cập nhật các asset riêng sau khi tests và kiểm tra khởi 
 
 Dịch giữ bố cục dùng PDFMathTranslate Next/BabelDOC trên PC. Lần đầu cần Internet tải model/font (~350 MB); dịch dùng nhà cung cấp đã chọn. Bản scan/ảnh có OCR ẩn chưa hỗ trợ dịch giữ bố cục.
 
+Gemini hỗ trợ dịch PDF và trợ lý tóm tắt/hỏi đáp/giải thích, gồm PDF scan. Nhập API key của bạn trên PC; trợ lý gửi toàn PDF tới Google sau khi bạn chủ động chọn phân tích. Giới hạn trợ lý: 10 MB, 60 trang. Hạn mức/chi phí theo Gemini API của bạn; kết quả AI cần đối chiếu bản gốc.
+
 Lượt cập nhật này: **${GITHUB_SHA}**.
 Hướng dẫn: https://github.com/$GH_REPO#readme
 EOF

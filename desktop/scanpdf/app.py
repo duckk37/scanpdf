@@ -104,5 +104,5 @@ def self_test() -> int:
         manager = JobManager(root / "jobs")
         assert manager.list_jobs() == []
         manager.shutdown()
-        print(json.dumps({"status": "passed", "version": "1.2.0", "pdf": "passed", "engine_import": "passed", "engine_spawn": "passed"}))
+        print(json.dumps({"status": "passed", "version": "1.3.0", "pdf": "passed", "engine_import": "passed", "engine_spawn": "passed"}))
     return 0

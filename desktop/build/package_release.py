@@ -83,7 +83,7 @@ def main() -> None:
         revision = (json.loads(source_manifest.read_text(encoding="utf-8")).get("source_revision")
                     if source_manifest.is_file() else "unversioned-source")
         dirty = None  # Local modifications cannot be determined without Git.
-    (app / "BUILD.json").write_text(json.dumps({"version": "1.2.0", "source_revision": revision,
+    (app / "BUILD.json").write_text(json.dumps({"version": "1.3.0", "source_revision": revision,
         "source_has_local_changes": dirty, "architecture": "Windows x64", "signing": "unsigned"}, indent=2) + "\n", encoding="utf-8")
     for source in (DESKTOP / "LICENSE", DESKTOP / "THIRD_PARTY_NOTICES.md", REPO / "docs" / "windows.md"):
         (app / source.name).write_bytes(source.read_bytes())
